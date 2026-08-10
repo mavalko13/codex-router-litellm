@@ -10,6 +10,7 @@
       "baseUrlEnv": "CODEX_ROUTER_LITELLM_BASE_URL",
       "configurableBaseUrl": true,
       "autoCurateDiscoveredModels": true,
+      "importLiveModelMetadata": true,
       "defaultApiSurface": "chat-completions",
       "apiSurfaceOverrides": [
         {

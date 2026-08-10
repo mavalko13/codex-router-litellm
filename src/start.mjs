@@ -267,8 +267,9 @@ function runPeriodicAutoCurate() {
     }
     if (action === "idle") return;
     restartRequested = true;
+    const metadataNote = summary?.metadataChanged ? " and live metadata changes" : "";
     console.error(
-      `[model-router] ${summary?.added || 0} new model(s) await publication; restarting the local router stack to publish routes and catalog`,
+      `[model-router] ${summary?.added || 0} new model(s)${metadataNote} await publication; restarting the local router stack to publish routes and catalog`,
     );
     stopChildren();
   });

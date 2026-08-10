@@ -31,10 +31,14 @@ test("automatic discovery ignores an environment key and uses the saved restrict
         },
       }],
     }));
+    writeFileSync(path.join(stateDir, "provider-endpoints.json"), JSON.stringify({
+      version: 1,
+      endpoints: { "example-litellm": "https://saved-fixture.invalid/v1" },
+    }));
     process.env.MODEL_ROUTER_STATE_DIR = stateDir;
     process.env.MODEL_ROUTER_REGISTRY = path.join(stateDir, "providers.json");
     process.env.EXAMPLE_LITELLM_API_KEY = environmentKey;
-    process.env.EXAMPLE_LITELLM_BASE_URL = "https://fixture.invalid/v1";
+    process.env.EXAMPLE_LITELLM_BASE_URL = "https://environment-fixture.invalid/v1";
     const { discoverProviderModels } = await import("../src/model-discovery.mjs");
     const result = await discoverProviderModels("example-litellm", {
       persistentCredential: true,
@@ -48,7 +52,7 @@ test("automatic discovery ignores an environment key and uses the saved restrict
       },
     });
     assert.deepEqual(result.discovered, ["live-model"]);
-    assert.equal(request.url, "https://fixture.invalid/v1/models");
+    assert.equal(request.url, "https://saved-fixture.invalid/v1/models");
     assert.equal(request.options.headers.Authorization, `Bearer ${savedKey}`);
     assert.notEqual(request.options.headers.Authorization, `Bearer ${environmentKey}`);
   } finally {

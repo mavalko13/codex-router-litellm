@@ -55,7 +55,11 @@ The installer asks for these values in order:
 
 During installation/startup, the router automatically discovers models that
 the saved virtual key may use and publishes new IDs with conservative local
-metadata. These commands remain useful for inspection, manual metadata, and
+metadata. Reliable `max_input_tokens` and `max_output_tokens` returned by
+LiteLLM are cached and applied to every checked-in, manual, and auto-curated
+model for this provider. The input limit becomes the Codex context window and
+the auto-compaction threshold is 85%; 131072 is only the fallback when no valid
+live input limit exists. These commands remain useful for inspection, manual metadata, and
 route corrections:
 
 ```sh

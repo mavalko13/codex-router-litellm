@@ -84,7 +84,11 @@ Windows:
 `/v1/models` при установке/старте и затем раз в пять минут. Для фонового
 запроса используется сохранённый ключ, а не временная переменная окружения.
 
-Новые ID записываются в защищённый локальный `user-models.json` с осторожными
+Для каждой объявленной модели Router сохраняет достоверные
+`max_input_tokens` и `max_output_tokens` из LiteLLM. Они применяются ко
+встроенным, ручным и auto-curated моделям. Codex получает live
+входной лимит как context window, а auto-compaction начинается на 85%.
+Если LiteLLM не прислал валидный лимит, новые ID используют fallback
 metadata: только text input, context window 131072, effort `high`, без
 неподтверждённых vision, search, reasoning summary и `apply_patch`. По
 умолчанию модель использует Chat Completions, а проверенный prefix

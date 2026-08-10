@@ -159,6 +159,18 @@ test("both installers keep the update when setup reports exit 2", () => {
   assert.match(windows, /switch --detach \$PreviousRevision/);
 });
 
+test("Windows bootstraps runtime dependencies before importing setup", () => {
+  const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
+  const outer = windows.slice(0, windows.indexOf('if (-not (Test-RouterCheckout $ScriptDirectory))'));
+  const installPlan = outer.indexOf("src/install-plan.mjs status node-deps");
+  const npmCi = outer.indexOf("npm ci --omit=dev");
+  const record = outer.indexOf("src/install-plan.mjs record node-deps");
+  const setup = outer.indexOf('$SetupScript = "src\\setup.mjs"');
+  assert.ok(installPlan !== -1 && npmCi !== -1 && record !== -1 && setup !== -1);
+  assert.ok(installPlan < npmCi && npmCi < record && record < setup);
+  assert.match(outer, /Dependency bootstrap failed; the managed source checkout was restored/);
+});
+
 test("the kept-update message names the way back", () => {
   // Keeping the update on exit 2 is the right default, but a user who wanted
   // the old revision needs to be told the escape hatch exists; the retained

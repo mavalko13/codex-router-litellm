@@ -4,6 +4,12 @@ import path from "node:path";
 import { SOURCE_ROOT } from "./paths.mjs";
 import { DECLARED_API_SURFACES, effectiveApiSurface } from "./api-surface.mjs";
 import { readUserModels } from "./user-models.mjs";
+import {
+  applyLiveModelMetadata,
+  providerSourceHash,
+  readLiveModelMetadata,
+} from "./live-model-metadata.mjs";
+import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
 
 export const REGISTRY_PATH =
   process.env.MODEL_ROUTER_REGISTRY ||
@@ -174,6 +180,12 @@ function loadRegistry() {
         typeof provider.autoCurateDiscoveredModels !== "boolean"
       ) {
         fail(`provider ${provider.id} has an invalid autoCurateDiscoveredModels flag`);
+      }
+      if (
+        provider.importLiveModelMetadata !== undefined &&
+        typeof provider.importLiveModelMetadata !== "boolean"
+      ) {
+        fail(`provider ${provider.id} has an invalid importLiveModelMetadata flag`);
       }
       if (
         provider.defaultApiSurface !== undefined &&
@@ -541,8 +553,30 @@ function mergeUserModels(base) {
 const registry = loadRegistry();
 const merged = mergeUserModels(registry);
 
+const liveSourceHashes = new Map();
+for (const provider of registry.providers.values()) {
+  if (provider.importLiveModelMetadata !== true) continue;
+  try {
+    liveSourceHashes.set(
+      provider.id,
+      providerSourceHash(resolveProviderBaseUrl(provider, { persistent: true })),
+    );
+  } catch {
+    // A malformed or temporarily unavailable saved endpoint must not prevent
+    // the last usable static catalog from loading.
+  }
+}
+const effectiveModels = Object.freeze(
+  applyLiveModelMetadata(
+    merged.models,
+    registry.providers,
+    readLiveModelMetadata(),
+    liveSourceHashes,
+  ).map((model) => Object.freeze(model)),
+);
+
 export const PROVIDERS = registry.providers;
-export const MODELS = merged.models;
+export const MODELS = effectiveModels;
 export const USER_MODEL_WARNINGS = merged.warnings;
 export const LISTED_MODELS = Object.freeze(MODELS.filter((model) => model.listed));
 export const API_MODELS = Object.freeze(

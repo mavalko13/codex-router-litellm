@@ -245,6 +245,7 @@ test("apiSurface is validated by the registry loader", () => {
 
 test("provider API-surface defaults and overrides are validated", () => {
   const cases = [
+    [{ importLiveModelMetadata: "yes" }, /invalid importLiveModelMetadata flag/],
     [{ defaultApiSurface: "completions" }, /unsupported defaultApiSurface/],
     [{ apiSurfaceOverrides: {} }, /invalid apiSurfaceOverrides/],
     [{ apiSurfaceOverrides: [{ prefix: "", apiSurface: "responses" }] }, /invalid apiSurfaceOverride/],
