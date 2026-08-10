@@ -35,7 +35,7 @@ $PreviousRevision = $null
 $RepositoryUrl = if ($env:CODEX_ROUTER_REPOSITORY_URL) {
   $env:CODEX_ROUTER_REPOSITORY_URL
 } else {
-  "https://github.com/mavalko13/codex-router-mavalko-litellm.git"
+  "https://github.com/mavalko13/codex-router-litellm.git"
 }
 
 function Assert-Command([string]$Name, [string]$Help) {
@@ -112,9 +112,9 @@ if (-not $CheckoutInstall) {
       $Origin = (& git -C $InstallDir remote get-url origin).Trim()
       $AllowedOrigins = @(
         $RepositoryUrl,
-        "https://github.com/mavalko13/codex-router-mavalko-litellm",
-        "https://github.com/mavalko13/codex-router-mavalko-litellm.git",
-        "git@github.com:mavalko13/codex-router-mavalko-litellm.git"
+        "https://github.com/mavalko13/codex-router-litellm",
+        "https://github.com/mavalko13/codex-router-litellm.git",
+        "git@github.com:mavalko13/codex-router-litellm.git"
       ) | Where-Object { $_ }
       if ($Origin -notin $AllowedOrigins) {
         throw "$InstallDir has an unrecognized origin and will not be updated: $Origin"

@@ -30,9 +30,9 @@ function requireManagedCheckout() {
   const configured = process.env.CODEX_ROUTER_REPOSITORY_URL;
   const allowed = new Set([
     configured,
-    "https://github.com/mavalko13/codex-router-mavalko-litellm",
-    "https://github.com/mavalko13/codex-router-mavalko-litellm.git",
-    "git@github.com:mavalko13/codex-router-mavalko-litellm.git",
+    "https://github.com/mavalko13/codex-router-litellm",
+    "https://github.com/mavalko13/codex-router-litellm.git",
+    "git@github.com:mavalko13/codex-router-litellm.git",
   ].filter(Boolean));
   if (!allowed.has(origin)) {
     throw new Error(`The origin remote is not a recognized Codex Router repository: ${origin}`);

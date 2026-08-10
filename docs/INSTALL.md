@@ -29,7 +29,7 @@ the same command.
 
 ```text
 Install Codex Router from:
-https://github.com/mavalko13/codex-router-mavalko-litellm
+https://github.com/mavalko13/codex-router-litellm
 
 Follow AGENTS.md. Preserve all of my existing Codex settings and ChatGPT login.
 Use only the provider authentication I choose, safely migrate recognized older
@@ -45,27 +45,27 @@ definition stores the checkout's absolute path.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.sh | sh -s -- --guided
+curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh | sh -s -- --guided
 ```
 
 Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Guided
 ```
 
 Clone-and-review installation is also supported:
 
 ```sh
-git clone https://github.com/mavalko13/codex-router-mavalko-litellm.git
+git clone https://github.com/mavalko13/codex-router-litellm.git
 cd codex-router
 ./install.sh --guided
 ```
 
 ```powershell
-git clone https://github.com/mavalko13/codex-router-mavalko-litellm.git
+git clone https://github.com/mavalko13/codex-router-litellm.git
 Set-Location codex-router
 ./install.ps1 -Guided
 ```

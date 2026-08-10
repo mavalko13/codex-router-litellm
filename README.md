@@ -22,7 +22,7 @@ Paste this into a Codex task:
 
 ```text
 Install the router from this public repository:
-https://github.com/mavalko13/codex-router-mavalko-litellm
+https://github.com/mavalko13/codex-router-litellm
 
 Follow AGENTS.md. Preserve my existing Codex models, profiles, settings, and
 ChatGPT login. Use only the provider authentication I choose, safely migrate
@@ -39,7 +39,7 @@ hidden local terminal prompt.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh \
   | sh -s -- --target codex --guided
 ```
 
@@ -47,7 +47,7 @@ Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
 ```
 
