@@ -20,6 +20,23 @@ const FOREIGN_OWNER = path.resolve("/somewhere/else/codex-router");
 // upstream account error rather than a routing error.
 function withState({ owner }, run) {
   const stateDir = mkdtempSync(path.join(os.tmpdir(), "state-owner-"));
+  // Catalog-writing cases must reach agent synchronization even on CI hosts
+  // that do not have a Codex binary. Keep the native capture inside the same
+  // disposable state fixture instead of borrowing the operator's installation.
+  writeFileSync(
+    path.join(stateDir, "native-models.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-test",
+          display_name: "GPT Test",
+          visibility: "list",
+          priority: 10,
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
   if (owner !== undefined) {
     writeFileSync(
       path.join(stateDir, "install-manifest.json"),
@@ -34,6 +51,20 @@ function withState({ owner }, run) {
   }
 }
 
+function isolatedEnv(stateDir, extraEnv = {}) {
+  const codexHome = path.join(stateDir, "codex-home");
+  mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+  return {
+    ...process.env,
+    ...extraEnv,
+    MODEL_ROUTER_STATE_DIR: stateDir,
+    // catalog.mjs also synchronizes routed agent definitions. Keeping only
+    // router state temporary while inheriting the operator's CODEX_HOME lets
+    // a test catalog with no models delete the live ~/.codex/agents entries.
+    CODEX_HOME: codexHome,
+  };
+}
+
 function ownershipStatus(stateDir, extraEnv = {}) {
   const result = spawnSync(
     process.execPath,
@@ -46,7 +77,7 @@ function ownershipStatus(stateDir, extraEnv = {}) {
     {
       cwd: root,
       encoding: "utf8",
-      env: { ...process.env, MODEL_ROUTER_STATE_DIR: stateDir, ...extraEnv },
+      env: isolatedEnv(stateDir, extraEnv),
     },
   );
   assert.equal(result.status, 0, result.stderr);
@@ -88,7 +119,7 @@ test("writing the catalog from a foreign checkout fails with guidance, not a sta
     const result = spawnSync(process.execPath, [path.join(root, "src", "catalog.mjs")], {
       cwd: root,
       encoding: "utf8",
-      env: { ...process.env, MODEL_ROUTER_STATE_DIR: stateDir },
+      env: isolatedEnv(stateDir),
     });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /owned by another checkout/);
@@ -111,7 +142,7 @@ test("writing the gateway config from a foreign checkout is refused", () => {
       {
         cwd: root,
         encoding: "utf8",
-        env: { ...process.env, MODEL_ROUTER_STATE_DIR: stateDir },
+        env: isolatedEnv(stateDir),
       },
     );
     assert.equal(result.stdout, "foreign_state_owner");
@@ -133,7 +164,7 @@ test("rendering the gateway config to an explicit path stays unguarded", () => {
       {
         cwd: root,
         encoding: "utf8",
-        env: { ...process.env, MODEL_ROUTER_STATE_DIR: stateDir },
+        env: isolatedEnv(stateDir),
       },
     );
     assert.equal(result.stdout, "wrote", result.stderr);
@@ -147,14 +178,36 @@ test("the installer is allowed to take ownership", () => {
     const result = spawnSync(process.execPath, [path.join(root, "src", "catalog.mjs")], {
       cwd: root,
       encoding: "utf8",
-      env: {
-        ...process.env,
-        MODEL_ROUTER_STATE_DIR: stateDir,
-        MODEL_ROUTER_ALLOW_FOREIGN_STATE: "1",
-      },
+      env: isolatedEnv(stateDir, { MODEL_ROUTER_ALLOW_FOREIGN_STATE: "1" }),
     });
+    assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stderr || "", /owned by another checkout/);
   });
+});
+
+test("catalog tests cannot delete routed agents from an inherited Codex home", () => {
+  const operatorHome = mkdtempSync(path.join(os.tmpdir(), "operator-codex-home-"));
+  const operatorAgents = path.join(operatorHome, "agents");
+  const sentinel = path.join(operatorAgents, "router-model-operator-sentinel.toml");
+  mkdirSync(operatorAgents, { recursive: true, mode: 0o700 });
+  writeFileSync(sentinel, "operator-agent\n", { mode: 0o600 });
+  try {
+    withState({ owner: FOREIGN_OWNER }, (stateDir) => {
+      const result = spawnSync(process.execPath, [path.join(root, "src", "catalog.mjs")], {
+        cwd: root,
+        encoding: "utf8",
+        env: isolatedEnv(stateDir, {
+          CODEX_HOME: operatorHome,
+          MODEL_ROUTER_ALLOW_FOREIGN_STATE: "1",
+        }),
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.doesNotMatch(result.stderr || "", /owned by another checkout/);
+      assert.equal(existsSync(sentinel), true);
+    });
+  } finally {
+    rmSync(operatorHome, { recursive: true, force: true });
+  }
 });
 
 test("doctor --fix from a foreign checkout delegates to the recorded owner", () => {
@@ -176,7 +229,7 @@ test("doctor --fix from a foreign checkout delegates to the recorded owner", () 
         {
           cwd: root,
           encoding: "utf8",
-          env: { ...process.env, MODEL_ROUTER_STATE_DIR: stateDir },
+          env: isolatedEnv(stateDir),
         },
       );
       assert.equal(result.status, 0, result.stderr);
