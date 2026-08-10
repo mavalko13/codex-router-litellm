@@ -3,21 +3,33 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { discoverProviderModels } from "./model-discovery.mjs";
+import {
+  DECLARED_API_SURFACES,
+  isAutoCuratedModel,
+  trustedApiSurfaceForUpstream,
+} from "./api-surface.mjs";
 import { MODELS, PROVIDERS, USER_MODEL_WARNINGS } from "./model-registry.mjs";
 import { SOURCE_ROOT } from "./paths.mjs";
 import { confirm, promptLine } from "./setup-shared.mjs";
 import { toggleSelection } from "./setup-ui.mjs";
-import { readUserModels, userModelEntry, writeUserModels } from "./user-models.mjs";
+import {
+  readUserModels,
+  updateUserModels,
+  USER_MODELS_PATH,
+  userModelEntry,
+} from "./user-models.mjs";
 
 // Interactive curation: list the provider's live models that are not part of
 // the checked-in registry, let the user toggle the ones they want, and persist
 // them as user models. Discovery never edits the checked-in config/ registry tree.
 
 const providerId = process.argv[2];
-const modelsOption = (() => {
-  const index = process.argv.indexOf("--models");
-  return index === -1 ? undefined : process.argv[index + 1];
-})();
+export function modelSelectionOption(argv) {
+  const index = argv.indexOf("--models");
+  if (index !== -1) return argv[index + 1];
+  return argv[3] && !argv[3].startsWith("--") ? argv[3] : undefined;
+}
+const modelsOption = modelSelectionOption(process.argv);
 const removeOption = (() => {
   const index = process.argv.indexOf("--remove");
   return index === -1 ? undefined : process.argv[index + 1];
@@ -30,6 +42,10 @@ const effortsOption = (() => {
 })();
 const requestProfileOption = (() => {
   const index = process.argv.indexOf("--request-profile");
+  return index === -1 ? undefined : process.argv[index + 1];
+})();
+const apiSurfaceOption = (() => {
+  const index = process.argv.indexOf("--api-surface");
   return index === -1 ? undefined : process.argv[index + 1];
 })();
 
@@ -59,11 +75,23 @@ const REQUEST_PROFILE_DESCRIPTIONS = {
 
 function usage() {
   console.error(
-    "Usage: curate-models.mjs PROVIDER [--models id1,id2 | interactive] " +
+    "Usage: curate-models.mjs PROVIDER [MODEL | --models id1,id2 | interactive] " +
       "[--remove id1,id2] [--apply|--no-apply] [--efforts minimal,low,medium,high,xhigh] " +
-      `[--request-profile ${Object.keys(REQUEST_PROFILE_DESCRIPTIONS).join("|")}]`,
+      `[--request-profile ${Object.keys(REQUEST_PROFILE_DESCRIPTIONS).join("|")}] ` +
+      `[--api-surface ${DECLARED_API_SURFACES.join("|")}]`,
   );
   process.exit(2);
+}
+
+export function parseApiSurface(raw) {
+  const surface = String(raw ?? "").trim().toLowerCase();
+  if (!surface) return undefined;
+  if (!DECLARED_API_SURFACES.includes(surface)) {
+    throw new Error(
+      `Unknown API surface "${surface}". Choose from: ${DECLARED_API_SURFACES.join(", ")}.`,
+    );
+  }
+  return surface;
 }
 
 // Nothing downstream validates the stored value: the forwarder simply matches
@@ -96,6 +124,24 @@ export function planCuration({ mine, chosen, removals, interactive }) {
     surviving,
     additions: chosenIds.filter((id) => !existingIds.has(id)),
   };
+}
+
+export function applyApiSurfaceUpdates(models, chosen, apiSurface) {
+  if (!apiSurface) return { models, updated: [], blocked: [] };
+  const chosenSet = new Set(chosen);
+  const updated = [];
+  const blocked = [];
+  const next = models.map((model) => {
+    if (!chosenSet.has(model.upstreamModel)) return model;
+    if (!isAutoCuratedModel(model)) {
+      blocked.push(model.upstreamModel);
+      return model;
+    }
+    if (model.apiSurface === apiSurface) return model;
+    updated.push(model.upstreamModel);
+    return { ...model, apiSurface };
+  });
+  return { models: next, updated, blocked };
 }
 
 export function parseEfforts(raw) {
@@ -135,6 +181,14 @@ const flagEfforts = (() => {
 const flagRequestProfile = (() => {
   try {
     return requestProfileOption ? parseRequestProfile(requestProfileOption) : undefined;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(2);
+  }
+})();
+const flagApiSurface = (() => {
+  try {
+    return apiSurfaceOption ? parseApiSurface(apiSurfaceOption) : undefined;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(2);
@@ -199,7 +253,6 @@ async function main() {
   for (const warning of USER_MODEL_WARNINGS) console.error(warning);
   const existing = readUserModels();
   const mine = existing.filter((model) => model.provider === providerId);
-  const others = existing.filter((model) => model.provider !== providerId);
   const curated = new Set(mine.map((model) => model.upstreamModel));
   if (modelsOption !== undefined && removeOption !== undefined) {
     throw new Error("Use --models to add models or --remove to prune them, not both.");
@@ -306,14 +359,26 @@ async function main() {
       : undefined;
   };
 
+  const apiSurfaceFor = (id) => {
+    if (flagApiSurface) return flagApiSurface;
+    return trustedApiSurfaceForUpstream(provider, id);
+  };
+
   const { surviving, additions } = planCuration({
     mine,
     chosen,
     removals,
     interactive: interactiveSelection,
   });
+  const surfaceUpdate = applyApiSurfaceUpdates(surviving, chosen, flagApiSurface);
+  if (surfaceUpdate.blocked.length > 0) {
+    throw new Error(
+      `Refusing to overwrite hand-curated model${surfaceUpdate.blocked.length === 1 ? "" : "s"}: ` +
+        surfaceUpdate.blocked.join(", "),
+    );
+  }
   const nextMine = [
-    ...surviving,
+    ...surfaceUpdate.models,
     ...additions.map((id, index) => {
       // Ask for metadata before the profile so interactive prompts stay under
       // one model heading and in the order they are printed.
@@ -321,18 +386,49 @@ async function main() {
       return userModelEntry({
         providerId,
         upstreamId: id,
+        apiSurface: apiSurfaceFor(id),
         requestProfile: requestProfileFor(id),
         priority: 100 + mine.length + index,
         metadata,
       });
     }),
   ];
-  const target = writeUserModels([...others, ...nextMine]);
-  const added = nextMine.filter((model) => !curated.has(model.upstreamModel)).length;
-  const removed = mine.length - (nextMine.length - added);
+  const prepared = new Map(nextMine.map((model) => [model.upstreamModel, model]));
+  const committedMine = updateUserModels((latest) => {
+    if (!latest.valid) {
+      throw new Error("user-models.json became unreadable; preserving the existing file.");
+    }
+    const latestMine = latest.models.filter((model) => model.provider === providerId);
+    const latestOthers = latest.models.filter((model) => model.provider !== providerId);
+    const latestPlan = planCuration({
+      mine: latestMine,
+      chosen,
+      removals,
+      interactive: interactiveSelection,
+    });
+    const latestSurfaceUpdate = applyApiSurfaceUpdates(
+      latestPlan.surviving,
+      chosen,
+      flagApiSurface,
+    );
+    if (latestSurfaceUpdate.blocked.length > 0) {
+      throw new Error(
+        `Refusing to overwrite hand-curated model${latestSurfaceUpdate.blocked.length === 1 ? "" : "s"}: ` +
+          latestSurfaceUpdate.blocked.join(", "),
+      );
+    }
+    const next = [
+      ...latestSurfaceUpdate.models,
+      ...latestPlan.additions.map((id) => prepared.get(id)).filter(Boolean),
+    ];
+    return { models: [...latestOthers, ...next], value: next };
+  });
+  const target = USER_MODELS_PATH;
+  const added = committedMine.filter((model) => !curated.has(model.upstreamModel)).length;
+  const removed = mine.length - (committedMine.length - added);
   process.stdout.write(
-    `Saved ${nextMine.length} curated ${provider.displayName} model${
-      nextMine.length === 1 ? "" : "s"
+    `Saved ${committedMine.length} curated ${provider.displayName} model${
+      committedMine.length === 1 ? "" : "s"
     } (${added} added, ${removed} removed) to ${target}.\n`,
   );
 

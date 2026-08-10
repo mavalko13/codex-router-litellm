@@ -1,8 +1,14 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { assertCallerSecret } from "./caller-auth.mjs";
+import {
+  AUTO_CURATE_PENDING_PATH,
+  autoCurateRefreshPending,
+  clearAutoCurateRefreshPending,
+  periodicAutoCurateAction,
+} from "./auto-curate-state.mjs";
 import {
   CALLER_SECRET_PATH,
   INTERNAL_SECRET_PATH,
@@ -15,7 +21,6 @@ import {
   loopback,
 } from "./paths.mjs";
 import { waitForHealth as pollHealth } from "./health-probe.mjs";
-import { writeLiteLlmConfig } from "./litellm-config.mjs";
 
 const litellm =
   process.env.MODEL_ROUTER_LITELLM_BIN ||
@@ -42,7 +47,77 @@ if (!internalKey) throw new Error("Internal service key is empty.");
 const callerKey = assertCallerSecret(
   readFileSync(CALLER_SECRET_PATH, "utf8").trim(),
 );
+
+const AUTO_CURATE_SCRIPT = path.join(SOURCE_ROOT, "src", "auto-curate-models.mjs");
+const CATALOG_SCRIPT = path.join(SOURCE_ROOT, "src", "catalog.mjs");
+const DEFAULT_AUTO_CURATE_INTERVAL_MS = 5 * 60_000;
+const MIN_AUTO_CURATE_INTERVAL_MS = 60_000;
+
+function parseAutoCurateSummary(stdout) {
+  try {
+    const parsed = JSON.parse(String(stdout || "").trim());
+    return Number.isInteger(parsed?.added) && parsed.added >= 0 ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function runAutoCurateSync() {
+  const result = spawnSync(process.execPath, [AUTO_CURATE_SCRIPT], {
+    cwd: SOURCE_ROOT,
+    env: process.env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+    maxBuffer: 1024 * 1024,
+  });
+  const summary = result.status === 0 ? parseAutoCurateSummary(result.stdout) : undefined;
+  return { ok: Boolean(summary), added: summary?.added || 0 };
+}
+
+function autoCurateIntervalMs() {
+  const configured = process.env.MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS;
+  if (configured === undefined || configured === "") return DEFAULT_AUTO_CURATE_INTERVAL_MS;
+  const value = Number(configured);
+  if (value === 0) return 0;
+  if (Number.isInteger(value) && value >= MIN_AUTO_CURATE_INTERVAL_MS) return value;
+  console.error(
+    `[model-router] invalid MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS; using ${DEFAULT_AUTO_CURATE_INTERVAL_MS}`,
+  );
+  return DEFAULT_AUTO_CURATE_INTERVAL_MS;
+}
+
+const startupAutoCurate = runAutoCurateSync();
+if (!startupAutoCurate.ok) {
+  if (!existsSync(MERGED_CATALOG_PATH)) {
+    throw new Error("Automatic model discovery failed and no existing catalog is available.");
+  }
+  console.error(
+    "[model-router] automatic model discovery failed; continuing with the existing local catalog",
+  );
+}
+// Publish routes before the picker. If catalog generation fails, an older
+// picker remains a safe subset of the fresh routes; the inverse would expose
+// a model that the running LiteLLM process cannot route.
+const { writeLiteLlmConfig } = await import("./litellm-config.mjs");
 writeLiteLlmConfig();
+
+if (existsSync(AUTO_CURATE_PENDING_PATH)) {
+  const catalogRefresh = spawnSync(
+    process.execPath,
+    [CATALOG_SCRIPT],
+    { cwd: SOURCE_ROOT, env: process.env, stdio: "inherit" },
+  );
+  if (catalogRefresh.status === 0) {
+    clearAutoCurateRefreshPending();
+  } else {
+    if (!existsSync(MERGED_CATALOG_PATH)) {
+      throw new Error("Codex model catalog refresh failed and no existing catalog is available.");
+    }
+    console.error(
+      "[model-router] catalog refresh failed; continuing with the existing local catalog",
+    );
+  }
+}
 
 const commonEnv = {
   MODEL_ROUTER_TARGET: TARGET,
@@ -91,6 +166,9 @@ const commonEnv = {
 
 const children = [];
 let shuttingDown = false;
+let restartRequested = false;
+let autoCurateTimer;
+let autoCurateChild;
 
 function run(command, args, extraEnv = {}) {
   const child = spawn(command, args, {
@@ -128,6 +206,14 @@ function waitForHealth(label, url, headers = {}, timeoutMs = 30_000, expectedSer
 function stopChildren() {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (autoCurateTimer) clearInterval(autoCurateTimer);
+  if (
+    autoCurateChild &&
+    autoCurateChild.exitCode === null &&
+    autoCurateChild.signalCode === null
+  ) {
+    autoCurateChild.kill("SIGTERM");
+  }
   for (const child of children) {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
   }
@@ -136,6 +222,63 @@ function stopChildren() {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     }
   }, 3_000).unref();
+}
+
+function runPeriodicAutoCurate() {
+  if (shuttingDown || autoCurateChild) return;
+  const child = spawn(process.execPath, [AUTO_CURATE_SCRIPT], {
+    cwd: SOURCE_ROOT,
+    env: process.env,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  autoCurateChild = child;
+  let stdout = "";
+  let overflow = false;
+  let spawnFailed = false;
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    if (stdout.length + chunk.length > 1024 * 1024) {
+      overflow = true;
+      return;
+    }
+    stdout += chunk;
+  });
+  child.once("error", () => {
+    spawnFailed = true;
+  });
+  // `close` follows both a normal exit and a spawn error. Using it rather than
+  // `exit` ensures a failed spawn releases the overlap guard for the next
+  // interval on every platform.
+  child.once("close", (code) => {
+    if (autoCurateChild === child) autoCurateChild = undefined;
+    if (shuttingDown) return;
+    if (spawnFailed) {
+      console.error("[model-router] periodic automatic model discovery could not be started");
+      return;
+    }
+    const summary = !overflow && code === 0 ? parseAutoCurateSummary(stdout) : undefined;
+    const pending = autoCurateRefreshPending();
+    const action = periodicAutoCurateAction({ summary, pending });
+    if (action === "failed") {
+      console.error(
+        "[model-router] periodic automatic model discovery failed; keeping the existing catalog",
+      );
+      return;
+    }
+    if (action === "idle") return;
+    restartRequested = true;
+    console.error(
+      `[model-router] ${summary?.added || 0} new model(s) await publication; restarting the local router stack to publish routes and catalog`,
+    );
+    stopChildren();
+  });
+}
+
+function startPeriodicAutoCurate() {
+  const intervalMs = autoCurateIntervalMs();
+  if (intervalMs === 0) return;
+  autoCurateTimer = setInterval(runPeriodicAutoCurate, intervalMs);
+  autoCurateTimer.unref();
 }
 
 const FRONTEND = { script: "router.mjs", service: "codex-router", label: "Codex router" };
@@ -190,6 +333,7 @@ async function main() {
   );
 
   console.error(`[${frontendService}] ready (authenticated loopback endpoint)`);
+  startPeriodicAutoCurate();
   const result = await Promise.race([
     waitForExit(kimiForwarder, "OAuth forwarder"),
     waitForExit(api, "API forwarder"),
@@ -202,7 +346,7 @@ async function main() {
       `[${frontendService}] ${result.label} exited (code=${String(result.code)}, signal=${String(result.signal)}).`,
     );
   }
-  return result.code || 0;
+  return restartRequested ? 75 : result.code || 0;
 }
 
 let exitCode = 0;

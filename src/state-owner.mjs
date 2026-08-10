@@ -10,8 +10,8 @@ import { SOURCE_ROOT, STATE_DIR } from "./paths.mjs";
 // from its own registry while Codex is handed a catalog built from a different
 // one, so the picker advertises models the gateway cannot route.
 //
-// `bin/install` is the sanctioned ownership transfer and sets the override
-// below, because it regenerates state before recording the new owner.
+// The shared install transaction is the sanctioned ownership transfer and
+// scopes the override below to its snapshot-protected install operation.
 const OVERRIDE_ENV = "MODEL_ROUTER_ALLOW_FOREIGN_STATE";
 
 function canonical(directory) {
@@ -53,9 +53,10 @@ export function stateOwnershipMessage(operation, status) {
   ].join("\n");
 }
 
-export function assertStateOwnership(operation) {
+export function assertStateOwnership(operation, options = {}) {
   const status = stateOwnershipStatus();
-  if (!status.foreign || status.overridden) return status;
+  const allowOverride = options.allowOverride !== false;
+  if (!status.foreign || (allowOverride && status.overridden)) return status;
   const error = new Error(stateOwnershipMessage(operation, status));
   error.code = "foreign_state_owner";
   throw error;

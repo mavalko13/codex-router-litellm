@@ -235,7 +235,17 @@ unanswered. The non-interactive `--models id1,id2` form is additive: it keeps
 existing curated entries and their metadata while adding the named models;
 `--efforts minimal,low,medium,high,xhigh` sets the new entries' ladder. Remove
 entries explicitly with `--remove id1,id2`. Every value stays editable in
-`user-models.json`. Curation also asks whether the model rejects a forced
+`user-models.json`. The API route is stored per model. OpenAI-compatible
+providers normally use Chat Completions; select Responses explicitly for a
+model that requires it:
+
+```sh
+./bin/curate-models PROVIDER --models MODEL_ID --api-surface responses --apply
+```
+
+The same command corrects an existing auto-curated entry without replacing its
+hand-edited metadata. `--api-surface chat-completions` switches it back.
+Curation also asks whether the model rejects a forced
 `tool_choice`: a few upstreams call tools happily when the choice is `auto`
 but answer HTTP 400 when one is required, which fails the compatibility check
 and the routed-subagent handoff even though tool calling works. Answering yes
@@ -244,6 +254,31 @@ forced choice for that model only (`--request-profile auto-tool-choice` in the
 `--models` form). The provider's own `/v1/models` endpoint always decides
 which models exist. Curated models are local to your machine and are not
 vetted by the repository's compatibility tests.
+
+The built-in `litellm-gateway` provider explicitly opts in to automatic live
+discovery because its endpoint and restricted virtual key are configured by
+the operator. The service reads `/v1/models` during installation/startup and
+every five minutes. It uses the saved key for background discovery, rather
+than an environment-only override that may disappear when the terminal exits.
+
+New IDs are added to protected local state with conservative metadata: text
+input only, a 131072-token context window, high reasoning effort, and no
+unverified vision, search, reasoning-summary, or `apply_patch` capability.
+The provider's default route is Chat Completions, while the checked-in trusted
+`codex-gpt-` prefix selects Responses. Use the command above for any other
+alias that requires Responses. Existing entries and operator edits are
+preserved. A model missing from a later `/v1/models` response is logged but
+never pruned automatically, and a failed discovery keeps the last usable
+routes and picker catalog.
+
+When discovery adds a model, the supervised local router stack restarts once
+to rebuild and publish gateway routes before the picker catalog. A durable
+pending marker makes the next startup retry an interrupted publication. Codex
+Desktop reads the picker catalog only when the app starts, so fully quit and
+reopen Codex to see newly discovered models. Set
+`MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0` to disable periodic checks, or set an
+integer of at least `60000` milliseconds to change the interval. Startup
+discovery and manual `curate-models` remain available.
 
 ### opencode (Go subscription and Zen)
 
@@ -1055,6 +1090,27 @@ generated config and service match the source revision.
 
 Tagged releases contain `.tar.gz` and `.zip` source archives, SHA-256 checksums,
 and GitHub build-provenance attestations.
+
+## Local verification
+
+Run the same core checks locally before opening a pull request:
+
+```sh
+npm run verify:local
+```
+
+This performs a clean dependency install, syntax checks, the complete Node
+suite, a production dependency audit, and platform entrypoint checks. After a
+Desktop change, run `npm run verify:local:full`; it also checks the Rust/Tauri
+application and builds its native binary, so `cargo` and `rustc` are required.
+`npm run verify:local:fast` is for a repeat run with dependencies already
+current, and `npm run verify:local:plan` prints the full plan without running
+it. These commands do not call provider APIs or paid models.
+
+The public repository still runs hosted CI automatically for pushes and pull
+requests, keeps the scheduled cross-platform Python-lock verification, and
+keeps CodeQL enabled. Local verification supplements those gates; it does not
+replace them.
 
 ## How routing works
 

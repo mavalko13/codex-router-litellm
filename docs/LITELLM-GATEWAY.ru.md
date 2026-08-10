@@ -17,16 +17,17 @@ Codex Router работает локально на Mac, Windows PC или Linux
 flowchart LR
   C["Codex App или CLI"] -->|"Responses API через loopback"| R["Codex Router :4102"]
   R -->|"внутренний ключ"| L["Локальный LiteLLM adapter :4100"]
-  L -->|"Chat Completions"| F["Credential forwarder :4103"]
+  L -->|"Responses или Chat Completions для каждой модели"| F["Credential forwarder :4103"]
   F -->|"virtual key пользователя"| G["LiteLLM gateway пользователя"]
   G --> M["Модели, разрешённые ключу"]
 ```
 
-Локальный adapter преобразует запросы и потоки Codex Responses в
-OpenAI-совместимый Chat Completions. Credential forwarder удаляет заголовки
-идентификации Codex и ChatGPT, добавляет только выбранный LiteLLM virtual key и
-отправляет запрос по сохранённому upstream URL. Нативные GPT-модели обходят
-этот маршрут и продолжают работать через обычный Codex backend.
+Локальный adapter направляет каждую модель через объявленный для неё
+OpenAI-compatible surface: по умолчанию Chat Completions, либо Responses после
+явного выбора. Credential forwarder удаляет заголовки идентификации Codex и
+ChatGPT, добавляет только выбранный LiteLLM virtual key и отправляет запрос по
+сохранённому upstream URL. Нативные GPT-модели обходят этот маршрут и
+продолжают работать через обычный Codex backend.
 
 ## Интерактивная установка
 
@@ -52,8 +53,10 @@ Windows PowerShell:
 2. **LiteLLM virtual key** — скрытый ввод. Ключ нельзя передать аргументом
    команды, и после ввода он не печатается.
 
-После установки получите список доступных ключу моделей и выберите те, которые
-должны появиться в Codex:
+При установке/старте router автоматически обнаруживает доступные сохранённому
+ключу модели и публикует новые ID с осторожными локальными metadata. Команды
+ниже остаются полезными для просмотра, ручной настройки metadata и исправления
+маршрута:
 
 ```sh
 ./bin/model-router codex discover-models litellm-gateway
@@ -71,6 +74,18 @@ Windows PowerShell:
 
 После изменения списка моделей полностью закройте и снова откройте Codex, чтобы
 он перечитал сгенерированный каталог.
+
+Безопасный default для универсального провайдера — Chat Completions;
+проверенный prefix `codex-gpt-` автоматически выбирает Responses. Если другой
+alias LiteLLM требует Responses endpoint, задайте маршрут явно:
+
+```sh
+./bin/curate-models litellm-gateway --models MODEL_ID --api-surface responses --apply
+```
+
+Команда также исправляет существующую auto-curated запись без потери вручную
+изменённых metadata. Для обратного переключения используйте
+`--api-surface chat-completions`.
 
 ## Локальное состояние и приоритет настроек
 
@@ -112,9 +127,25 @@ Forwarder заново разрешает сохранённые URL и ключ
 administrator key.
 
 Discovery видит только те модели, которые возвращает gateway для данного
-ключа. Curation выполняется локально и явно: обнаруженная модель сама не
-публикуется в picker, а модель, выбранная на одном компьютере, не появляется
-автоматически на другом.
+ключа. `litellm-gateway` явно помечен как доверенный provider под управлением
+оператора, поэтому проверяет live catalog при установке/старте и затем раз в
+пять минут. Фоновый запрос использует сохранённый restricted key, а не
+временную переменную окружения.
+
+Новые ID добавляются в защищённый `user-models.json` с defaults: только text,
+context 131072, effort `high`, без неподтверждённых vision, search, reasoning
+summary и `apply_patch`. Существующие записи и ручные правки имеют приоритет.
+Исчезнувший ID только записывается в лог и автоматически не удаляется: причиной
+может быть временный ACL или неполный catalog response. Ошибка discovery или
+публикации оставляет последние рабочие routes и picker catalog.
+
+После добавления ID supervisor перезапускает только локальный router stack и
+публикует сначала gateway routes, затем picker catalog. Если процесс оборвался,
+durable pending marker повторит его при следующем старте. Codex Desktop всё
+равно нужно полностью закрыть и открыть, чтобы перечитать picker. Периодический
+опрос отключается через `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое
+значение должно быть целым числом не меньше `60000` мс. Startup discovery и
+ручной curate остаются доступны.
 
 ## Обновление, rollback и ветки
 
@@ -133,7 +164,11 @@ Discovery видит только те модели, которые возвра
 
 Если новая версия не проходит install gates, updater возвращает предыдущую
 ревизию. Пока сохранена предыдущая ревизия, оператор также может выполнить
-`./bin/rollback` или `./codex-router.ps1 rollback` на Windows.
+`./bin/rollback` или `./codex-router.ps1 rollback` на Windows. Update и repair
+используют тот же transactional порядок публикации, что и installer. При
+ошибке generation, service startup или health check возвращаются предыдущие
+managed files и service definition. После успешного обновления picker полностью
+закройте и снова откройте Codex.
 
 ## Проверка и диагностика
 
@@ -148,7 +183,8 @@ Discovery видит только те модели, которые возвра
 
 - `401` обычно означает неверный, истёкший или не принятый gateway virtual key.
 - `403` обычно означает, что ключ распознан, но не имеет доступа к модели.
-- Пустой picker при успешном подключении означает, что модели ещё не выбраны;
+- Пустой picker при успешном подключении означает, что startup discovery ещё
+  не опубликовал модели; проверьте `discover-models`, при необходимости
   выполните `curate-models` и перезапустите Codex.
 - Ошибка соединения обычно означает, что URL недоступен с компьютера
   пользователя или в нём отсутствует ожидаемый deployment префикс `/v1`.

@@ -201,10 +201,6 @@ if ([int]$VersionParts[0] -lt 22 -or
   throw "Node.js 22.19 or newer is required; Node.js 24 LTS is recommended."
 }
 
-$ConfigManager = "src\config-manager.mjs"
-$ConfigEnabled = $false
-$ServiceInstalled = $false
-$AdoptionPending = $false
 Push-Location $ScriptDirectory
 try {
   if ($Target -eq "codex") {
@@ -282,54 +278,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Recording the Python dependency state failed." }
   }
 
-  & node src/secret.mjs ensure
-  if ($LASTEXITCODE -ne 0) { throw "Local router-key setup failed." }
-  if ($AdoptNativeCatalog) {
-    & node src/native-catalog-source.mjs prepare-from-config | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Existing native model-catalog adoption failed." }
-    $AdoptionPending = $true
-  }
-  if ($Target -eq "codex") {
-    $StateRoot = if ($env:MODEL_ROUTER_STATE_DIR) { $env:MODEL_ROUTER_STATE_DIR }
-      elseif ($env:CODEX_ROUTER_STATE_DIR) { $env:CODEX_ROUTER_STATE_DIR }
-      elseif ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME "codex-router" }
-      else { Join-Path $HOME ".codex\codex-router" }
-    if (Test-Path (Join-Path $StateRoot "native-models.json")) {
-      & node src/catalog.mjs
-    } else {
-      & node src/catalog.mjs --refresh-native
-    }
-    if ($LASTEXITCODE -ne 0) { throw "Codex model-catalog generation failed." }
-  }
-  & node src/litellm-config.mjs
-  if ($LASTEXITCODE -ne 0) { throw "Gateway configuration generation failed." }
-
   if ($PrepareOnly) {
+    # The shared helper checks state ownership before its first write, so a
+    # foreign checkout cannot mutate the live state through -PrepareOnly.
+    & node src/install-transaction.mjs prepare
+    if ($LASTEXITCODE -ne 0) { throw "Preparing shared router state failed." }
     Write-Host "Dependencies and generated files are prepared; application configuration was not changed."
     exit 0
   }
 
-  $ConfigEnabled = $true
-  $ConfigArguments = @($ConfigManager, "enable")
-  if ($AdoptNativeCatalog) { $ConfigArguments += "--adopt-native-catalog" }
-  & node @ConfigArguments
-  if ($LASTEXITCODE -ne 0) { throw "$Target configuration update failed." }
-  $AdoptionPending = $false
-  $ServiceInstalled = $true
-  & node src/service.mjs install
-  if ($LASTEXITCODE -ne 0) { throw "Background-service installation failed." }
-  & node src/wait-health.mjs
-  if ($LASTEXITCODE -ne 0) { throw "The router did not become healthy." }
-  & node src/install-manifest.mjs record | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "Install-manifest recording failed." }
+  # The same transaction is used on POSIX and Windows: exact manifest/config
+  # and service definition/running state are restored after every failed step.
+  $TransactionArguments = @("src\install-transaction.mjs", "apply")
+  if ($AdoptNativeCatalog) { $TransactionArguments += "--adopt-native-catalog" }
+  & node @TransactionArguments
+  if ($LASTEXITCODE -ne 0) { throw "Router installation transaction failed." }
   Write-Host "Installed the selected external model routes. Fully quit and reopen Codex."
 } catch {
-  if ($ServiceInstalled) { & node src/service.mjs uninstall 2>$null | Out-Null }
-  if ($ConfigEnabled) {
-    & node $ConfigManager disable 2>$null | Out-Null
-  } elseif ($AdoptionPending) {
-    & node src/native-catalog-source.mjs clear-pending 2>$null | Out-Null
-  }
   throw
 } finally {
   Pop-Location

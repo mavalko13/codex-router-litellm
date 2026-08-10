@@ -78,6 +78,38 @@ Windows:
 После изменения picker полностью закройте Codex, снова откройте его и создайте
 новую задачу.
 
+## Автоматическое обновление моделей LiteLLM
+
+Встроенный провайдер `litellm-gateway` явно включает автоматическое discovery,
+поскольку URL и restricted virtual key задаёт сам оператор. Служба читает
+`/v1/models` при установке/старте и затем раз в пять минут. Для фонового
+запроса используется сохранённый ключ, а не временная переменная окружения.
+
+Новые ID записываются в защищённый локальный `user-models.json` с осторожными
+metadata: только text input, context window 131072, effort `high`, без
+неподтверждённых vision, search, reasoning summary и `apply_patch`. По
+умолчанию модель использует Chat Completions, а проверенный prefix
+`codex-gpt-` выбирает Responses. Если другому alias нужен Responses, маршрут
+можно задать или исправить без потери ручных metadata:
+
+```sh
+./bin/curate-models litellm-gateway --models MODEL_ID --api-surface responses --apply
+```
+
+Для обратного переключения используйте `--api-surface chat-completions`.
+Существующие записи и ручные правки сохраняются. Исчезнувшая из `/v1/models`
+модель автоматически не удаляется, а ошибка discovery оставляет последние
+рабочие routes и picker catalog.
+
+После добавления модели перезапускается только локальный router stack: сначала
+публикуются gateway routes, затем picker catalog. Durable pending marker
+повторяет незавершённую публикацию при следующем старте. Codex Desktop читает
+picker только при запуске, поэтому для появления новых моделей полностью
+закройте и снова откройте Codex. Периодический опрос отключается значением
+`MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое значение должно быть целым
+числом не меньше `60000` мс. Startup discovery и ручной `curate-models`
+остаются доступны.
+
 ## Безопасность
 
 Не используйте LiteLLM master key. Создавайте отдельный virtual key для каждого
@@ -112,3 +144,23 @@ public install URLs. После этого реальная установка �
 
 `doctor` показывает точный неисправный слой и безопасное действие для ремонта.
 Support bundle остаётся локальным и не загружается автоматически.
+
+## Локальная проверка
+
+Перед pull request можно запустить основной набор проверок локально:
+
+```sh
+npm run verify:local
+```
+
+Команда выполняет чистую установку dependencies, syntax checks, полный Node
+test suite, production dependency audit и проверки entrypoints текущей ОС.
+После изменения Desktop используйте `npm run verify:local:full`: дополнительно
+проверяется Rust/Tauri app и собирается native binary; нужны `cargo` и `rustc`.
+`npm run verify:local:fast` подходит для повторного запуска с уже актуальными
+dependencies, а `npm run verify:local:plan` только печатает полный план.
+Provider API и платные модели эти команды не вызывают.
+
+В публичном репозитории hosted CI по-прежнему автоматически запускается для
+push и pull request, Python-lock проверяется по расписанию, а CodeQL остаётся
+включённым. Локальная проверка дополняет эти gates, а не заменяет их.

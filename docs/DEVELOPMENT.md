@@ -88,6 +88,22 @@ the deterministic `--models` form), and everything defaults conservatively
 when unanswered. The stored entries in `user-models.json` are plain local
 state — edit any value in place and re-run `./bin/install` to apply.
 
+Providers may set `autoCurateDiscoveredModels: true` only when their live
+catalog and persistent credential are trusted for unattended local use. The
+portable registry enables this for the operator-owned `litellm-gateway`, not
+for arbitrary reseller catalogs. It also declares `defaultApiSurface` and may
+declare validated prefix overrides. The generic LiteLLM default is
+`chat-completions`; operators can set `--api-surface responses` or
+`--api-surface chat-completions` per model. Never infer a wire API from a model
+name globally.
+
+Automatic curation is additive and conservative. It preserves existing and
+hand-edited entries, never prunes a temporarily missing ID, and keeps the last
+usable catalog on discovery failure. Publication writes gateway routes before
+the picker catalog. A durable pending marker survives interruption, and the
+supervisor performs one coordinated local stack restart when publication is
+needed. Codex Desktop itself must be fully restarted to reread the picker.
+
 The deterministic `--models` form is additive so adding one model cannot
 discard other curated entries or their hand-tuned metadata. Non-interactive
 pruning is explicit with `--remove id1,id2` and does not require a provider
@@ -108,13 +124,18 @@ compatibility probe and the subagent payload relay's forced function call.
 ## Tests
 
 ```sh
-npm ci
-npm run check
-npm test
-sh -n install.sh
-for file in bin/*; do sh -n "$file"; done
-npm audit --omit=dev
+npm run verify:local
 ```
+
+This is the local core gate: clean root dependency installation, JavaScript
+syntax, the full Node suite, production dependency audit, and entrypoint checks
+for the current platform. It does not call provider APIs or paid models.
+
+After changing `apps/desktop`, run `npm run verify:local:full`. It also installs
+the desktop lock, runs the Rust/Tauri checks, and builds the native binary;
+`cargo` and `rustc` are required. `npm run verify:local:fast` skips only
+dependency installation on a repeat run, while `npm run verify:local:plan`
+prints the full plan without executing it.
 
 The test suite verifies native header forwarding, external credential
 isolation, Kimi and DeepSeek rewriting, registry-generated gateway routes,
@@ -122,9 +143,10 @@ Zstandard request decoding, both Codex compaction formats, legacy migration,
 provider selection, port defaults, Anthropic API forwarding, discovery
 comparison, and service rendering for all three service platforms.
 
-CI runs the Node suite on macOS, Linux, and Windows. Tagged releases are built
-only after the suite passes and include checksums plus GitHub provenance
-attestations.
+Public CI still runs automatically on pushes and pull requests across macOS,
+Linux, and Windows. The Python-lock workflow also runs for relevant changes and
+weekly, CodeQL stays enabled, and tagged releases are built only after the
+suite passes with checksums plus GitHub provenance attestations.
 
 Prepare an isolated state directory without touching the live Codex config:
 

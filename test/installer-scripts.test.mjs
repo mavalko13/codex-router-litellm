@@ -110,6 +110,17 @@ test("install.sh is valid POSIX shell", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("refresh-catalog publishes auto-curated routes before the picker", () => {
+  const source = readScript("bin", "refresh-catalog");
+  const autoCurate = source.indexOf("node src/auto-curate-models.mjs");
+  const routes = source.indexOf("node src/litellm-config.mjs");
+  const catalog = source.indexOf("node src/catalog.mjs");
+  const pending = source.indexOf("autoCurateRefreshPending");
+  const restart = source.indexOf("node src/service.mjs restart");
+  assert.ok(autoCurate !== -1 && routes !== -1 && catalog !== -1 && pending !== -1 && restart !== -1);
+  assert.ok(autoCurate < routes && routes < catalog && catalog < pending && pending < restart);
+});
+
 test(
   "install.ps1 parses under powershell.exe",
   { skip: process.platform !== "win32" },
@@ -190,16 +201,16 @@ test("the Windows wrapper hands every command its own arguments", () => {
 test("native catalog adoption is inside both installer rollback transactions", () => {
   const posix = readFileSync(path.join(root, "bin", "install"), "utf8");
   const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
+  const transaction = readFileSync(path.join(root, "src", "install-transaction.mjs"), "utf8");
 
+  assert.match(posix, /set -- "\$@" --adopt-native-catalog/);
+  assert.match(windows, /\$TransactionArguments \+= "--adopt-native-catalog"/);
+  assert.match(transaction, /if \(adoptNativeCatalog\) runStep\("adoption"\)/);
   assert.ok(
-    posix.indexOf("trap rollback EXIT HUP INT TERM") <
-      posix.indexOf("prepare-from-config"),
-    "POSIX adoption must start after the rollback trap",
+    transaction.indexOf("const snapshotDir = beginSnapshot()") <
+      transaction.indexOf('runStep("adoption")'),
+    "adoption must start only after the shared rollback snapshot",
   );
-  assert.match(posix, /clear-pending/);
-  assert.match(windows, /\$AdoptionPending\s*=\s*\$true/);
-  assert.match(windows, /native-catalog-source\.mjs clear-pending/);
-  assert.match(windows, /elseif \(\$AdoptionPending\)/);
 });
 
 test("rollback --force reaches the updater on Windows", () => {
@@ -369,13 +380,13 @@ test("prepare-only exits before the skills step", () => {
   assert.ok(prepareExit < skillsStep, "--prepare-only must exit before the skills step");
 });
 
-test("the skills step runs after the rollback trap is disarmed", () => {
+test("the skills step runs after the shared install transaction commits", () => {
   const source = readScript("bin", "install");
-  const trapDisarmed = source.indexOf("trap - EXIT HUP INT TERM");
+  const transactionStep = source.indexOf('node src/install-transaction.mjs "$@"');
   const skillsStep = source.indexOf("skills-install.mjs install");
-  assert.notEqual(trapDisarmed, -1, "bin/install must disarm the rollback trap");
+  assert.notEqual(transactionStep, -1, "bin/install must run the shared transaction");
   assert.notEqual(skillsStep, -1, "bin/install must call the skills step");
-  assert.ok(trapDisarmed < skillsStep, "skills step must run after the trap is disarmed");
+  assert.ok(transactionStep < skillsStep, "skills step must run only after transaction commit");
 });
 
 test("uninstall removes the managed skills", () => {

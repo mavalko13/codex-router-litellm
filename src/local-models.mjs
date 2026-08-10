@@ -17,7 +17,7 @@ import {
   readProviderSelection,
 } from "./provider-selection.mjs";
 import { STATE_DIR } from "./paths.mjs";
-import { readUserModels, userModelEntry, writeUserModels } from "./user-models.mjs";
+import { updateUserModels, userModelEntry } from "./user-models.mjs";
 // The vision catalog is measured against a known image, so image readers are
 // taken from there rather than guessed at a second time here.
 import { LOCAL_VISION_CATALOG as VISION_CATALOG } from "./vision-host.mjs";
@@ -130,7 +130,6 @@ export function syncLocalUserModels({
   enabled = readLocalModelSelection().enabled,
   capabilitiesFor = (tag) => localModelCapabilities(tag),
 } = {}) {
-  const others = readUserModels().filter((model) => model.provider !== LOCAL_PROVIDER_ID);
   // Codex drives every turn through tool calls. A model without them is not a
   // weaker chat model, it is a broken one: the first request comes back "does
   // not support tools". Such a model stays installed and stays usable as a
@@ -172,7 +171,13 @@ export function syncLocalUserModels({
       multiAgentVersion: "v1",
     };
   });
-  writeUserModels([...others, ...entries]);
+  updateUserModels((latest) => {
+    if (!latest.valid) {
+      throw new Error("user-models.json is unreadable; preserving the existing file.");
+    }
+    const others = latest.models.filter((model) => model.provider !== LOCAL_PROVIDER_ID);
+    return { models: [...others, ...entries], value: entries };
+  });
   return entries;
 }
 

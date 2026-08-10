@@ -17,7 +17,14 @@ if (!script) {
 }
 
 const command = process.argv[2] || "status";
-const mutatingCommands = new Set(["install", "uninstall", "start", "stop", "restart"]);
+const mutatingCommands = new Set([
+  "install",
+  "uninstall",
+  "start",
+  "stop",
+  "restart",
+  "restore",
+]);
 const readinessCommands = new Set(["install", "start", "restart"]);
 // start.mjs allows the LiteLLM gateway 300s to cold start, so the readiness
 // wait has to cover at least that. A shorter wait reports failure while the

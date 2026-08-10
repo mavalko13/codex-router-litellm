@@ -4,7 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const directories = [root, path.join(root, "src"), path.join(root, "test")];
+const directories = [
+  root,
+  path.join(root, "src"),
+  path.join(root, "test"),
+  path.join(root, "scripts"),
+];
 
 for (const directory of directories) {
   for (const entry of readdirSync(directory)) {

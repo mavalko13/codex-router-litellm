@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import lockfile from "proper-lockfile";
+
 import { protectPrivateFile } from "./file-security.mjs";
 import { STATE_DIR } from "./paths.mjs";
 
@@ -13,6 +15,7 @@ import { STATE_DIR } from "./paths.mjs";
 
 export const USER_MODELS_PATH =
   process.env.MODEL_ROUTER_USER_MODELS || path.join(STATE_DIR, "user-models.json");
+const USER_MODELS_LOCK_TARGET = path.join(path.dirname(USER_MODELS_PATH), "user-models-transaction");
 
 const DEFAULT_CONTEXT_WINDOW = 131072;
 const DEFAULT_AUTO_COMPACT = 110000;
@@ -21,6 +24,7 @@ const DEFAULT_AUTO_COMPACT = 110000;
 // identity and routing fields always come from the provider id and the
 // discovered model id.
 const METADATA_FIELDS = new Set([
+  "displayName",
   "description",
   "contextWindow",
   "autoCompact",
@@ -40,7 +44,7 @@ function gatewaySafe(value) {
     .replace(/^-|-$/g, "");
 }
 
-export function userModelEntry({ providerId, upstreamId, requestProfile, priority, metadata }) {
+export function userModelEntry({ providerId, upstreamId, requestProfile, apiSurface, priority, metadata }) {
   const gatewayModel = `${gatewaySafe(providerId)}-${gatewaySafe(upstreamId)}`;
   const entry = {
     slug: `${providerId}/${upstreamId}`,
@@ -62,20 +66,35 @@ export function userModelEntry({ providerId, upstreamId, requestProfile, priorit
     if (METADATA_FIELDS.has(key)) entry[key] = value;
   }
   if (requestProfile) entry.requestProfile = requestProfile;
+  if (apiSurface) entry.apiSurface = apiSurface;
   return entry;
 }
 
 export function readUserModels() {
-  if (!existsSync(USER_MODELS_PATH)) return [];
+  const detail = readUserModelsDetail();
+  return detail.valid ? detail.models : [];
+}
+
+// Automatic discovery must distinguish "there is no overlay yet" from "the
+// operator's overlay exists but this build cannot parse it". The tolerant
+// read path above keeps the router alive in both cases, while writers use this
+// detail to avoid replacing a hand-edited file they do not understand.
+export function readUserModelsDetail() {
+  if (!existsSync(USER_MODELS_PATH)) {
+    return { exists: false, valid: true, models: [] };
+  }
   try {
     const payload = JSON.parse(readFileSync(USER_MODELS_PATH, "utf8"));
-    return Array.isArray(payload?.models) ? payload.models : [];
+    if (!Array.isArray(payload?.models)) {
+      return { exists: true, valid: false, models: [] };
+    }
+    return { exists: true, valid: true, models: payload.models };
   } catch {
-    return [];
+    return { exists: true, valid: false, models: [] };
   }
 }
 
-export function writeUserModels(models) {
+function writeUserModelsUnlocked(models) {
   mkdirSync(path.dirname(USER_MODELS_PATH), { recursive: true, mode: 0o700 });
   const temporary = `${USER_MODELS_PATH}.tmp.${process.pid}`;
   writeFileSync(temporary, `${JSON.stringify({ version: 1, models }, null, 2)}\n`, {
@@ -91,4 +110,42 @@ export function writeUserModels(models) {
     throw error;
   }
   return USER_MODELS_PATH;
+}
+
+export function withUserModelsLock(operation) {
+  mkdirSync(path.dirname(USER_MODELS_LOCK_TARGET), { recursive: true, mode: 0o700 });
+  let release;
+  try {
+    release = lockfile.lockSync(USER_MODELS_LOCK_TARGET, {
+      realpath: false,
+      lockfilePath: `${USER_MODELS_LOCK_TARGET}.lock`,
+      stale: 90_000,
+      update: 10_000,
+      retries: 0,
+    });
+  } catch (error) {
+    if (error?.code === "ELOCKED") {
+      throw new Error("Another user-model update is still running; retry shortly.", {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  try {
+    return operation();
+  } finally {
+    release();
+  }
+}
+
+export function updateUserModels(operation) {
+  return withUserModelsLock(() => {
+    const result = operation(readUserModelsDetail());
+    if (Array.isArray(result?.models)) writeUserModelsUnlocked(result.models);
+    return result?.value;
+  });
+}
+
+export function writeUserModels(models) {
+  return withUserModelsLock(() => writeUserModelsUnlocked(models));
 }

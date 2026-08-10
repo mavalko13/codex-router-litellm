@@ -344,6 +344,21 @@ restart rather than a full `npm ci` and PyPI resolution. `./bin/doctor --fix`
 rebuilds them regardless, as does `./bin/install --force-deps`
 (`./install.ps1 -CheckoutInstall -ForceDeps` on Windows).
 
+For the operator-owned `litellm-gateway`, installation and startup use the
+saved restricted virtual key to discover live models automatically. New IDs
+are appended with conservative metadata; missing IDs are never pruned and a
+failed check keeps the previous routes and catalog. The service checks again
+every five minutes unless `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`. A model
+that requires OpenAI Responses instead of the default Chat Completions can be
+corrected with `curate-models litellm-gateway --models MODEL_ID --api-surface
+responses --apply` without discarding hand-edited metadata.
+
+Publishing a discovered model restarts the local router stack so gateway routes
+are available before the picker catalog is advertised. A pending marker makes
+the next startup retry an interrupted publication. The install transaction
+restores prior managed files and the prior service definition when generation,
+startup, or health verification fails.
+
 When upgrading from a release without caller capabilities, the installer
 generates one, replaces only the marked managed URL, tightens config permissions,
 and restarts the per-user router service. Fully quit and reopen Codex afterward

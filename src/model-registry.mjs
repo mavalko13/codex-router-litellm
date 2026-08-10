@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { SOURCE_ROOT } from "./paths.mjs";
+import { DECLARED_API_SURFACES, effectiveApiSurface } from "./api-surface.mjs";
 import { readUserModels } from "./user-models.mjs";
 
 export const REGISTRY_PATH =
@@ -168,6 +169,42 @@ function loadRegistry() {
       ) {
         fail(`provider ${provider.id} has an invalid configurableBaseUrl flag`);
       }
+      if (
+        provider.autoCurateDiscoveredModels !== undefined &&
+        typeof provider.autoCurateDiscoveredModels !== "boolean"
+      ) {
+        fail(`provider ${provider.id} has an invalid autoCurateDiscoveredModels flag`);
+      }
+      if (
+        provider.defaultApiSurface !== undefined &&
+        !DECLARED_API_SURFACES.includes(provider.defaultApiSurface)
+      ) {
+        fail(`provider ${provider.id} has an unsupported defaultApiSurface`);
+      }
+      if (
+        provider.apiSurfaceOverrides !== undefined &&
+        !Array.isArray(provider.apiSurfaceOverrides)
+      ) {
+        fail(`provider ${provider.id} has invalid apiSurfaceOverrides`);
+      }
+      const overridePrefixes = new Set();
+      for (const override of provider.apiSurfaceOverrides || []) {
+        if (
+          !override ||
+          typeof override !== "object" ||
+          Array.isArray(override) ||
+          typeof override.prefix !== "string" ||
+          !override.prefix ||
+          /[\u0000-\u001f\u007f]/.test(override.prefix) ||
+          !DECLARED_API_SURFACES.includes(override.apiSurface)
+        ) {
+          fail(`provider ${provider.id} has an invalid apiSurfaceOverride`);
+        }
+        if (overridePrefixes.has(override.prefix)) {
+          fail(`provider ${provider.id} has duplicate apiSurfaceOverride prefix ${JSON.stringify(override.prefix)}`);
+        }
+        overridePrefixes.add(override.prefix);
+      }
       if (provider.keyless && provider.configurableBaseUrl) {
         fail(`keyless provider ${provider.id} may not have a configurable remote endpoint`);
       }
@@ -301,6 +338,16 @@ function modelProblem(model, providers, slugs, gatewayModels) {
   }
   if (model.requestProfile !== undefined && typeof model.requestProfile !== "string") {
     return `model ${model.slug} has an invalid requestProfile`;
+  }
+  if (model.apiSurface !== undefined) {
+    if (typeof model.apiSurface !== "string" || !model.apiSurface.trim()) {
+      return `model ${model.slug} has an invalid apiSurface`;
+    }
+    if (!DECLARED_API_SURFACES.includes(model.apiSurface))
+      return `model ${model.slug} has an unsupported apiSurface ${JSON.stringify(model.apiSurface)}`;
+  }
+  if (model.autoCurated !== undefined && typeof model.autoCurated !== "boolean") {
+    return `model ${model.slug} has an invalid autoCurated flag`;
   }
   if (
     model.multiAgentVersion !== undefined &&
@@ -462,6 +509,12 @@ function mergeUserModels(base) {
     const problem = modelProblem(model, base.providers, slugs, gatewayModels);
     if (problem) {
       warnings.push(`Skipped user model: ${problem}`);
+      continue;
+    }
+    if (!effectiveApiSurface(model, base.providers.get(model.provider))) {
+      warnings.push(
+        `Skipped user model with unknown API surface: ${JSON.stringify(String(model.slug))}`,
+      );
       continue;
     }
     slugs.add(model.slug);

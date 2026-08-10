@@ -9,7 +9,11 @@
   },
   "scripts": {
     "check": "node scripts-check.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "verify:local": "node scripts/verify-local.mjs",
+    "verify:local:fast": "node scripts/verify-local.mjs --full --reuse-deps",
+    "verify:local:full": "node scripts/verify-local.mjs --full",
+    "verify:local:plan": "node scripts/verify-local.mjs --full --dry-run"
   },
   "dependencies": {
     "proper-lockfile": "4.1.2"
