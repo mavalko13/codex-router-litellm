@@ -19,6 +19,7 @@ import { kimiOAuthStatus } from "./oauth-status.mjs";
 import { grokOAuthStatus } from "./grok-oauth-status.mjs";
 import { SOURCE_ROOT } from "./paths.mjs";
 import { credentialStatus } from "./provider-credentials.mjs";
+import { providerEndpointStatus, writeProviderEndpoint } from "./provider-endpoints.mjs";
 import { providerOnboardingSnapshot } from "./provider-onboarding.mjs";
 import { configuredProviderIds, validateProviderIds } from "./provider-selection.mjs";
 import { renderProviderChoices, toggleSelection } from "./setup-ui.mjs";
@@ -278,6 +279,11 @@ function onboardGrokOauth() {
 // Ensure a selected provider has a usable credential, onboarding it when guided.
 // providerKeyCommand(id) yields the target-specific hint for the non-guided path.
 export function configureProvider(provider, { guided, providerKeyCommand }) {
+  if (guided && provider.configurableBaseUrl) {
+    const current = providerEndpointStatus(provider, { persistent: true }).value;
+    const endpoint = promptLine(`${provider.displayName} OpenAI-compatible base URL`, current);
+    writeProviderEndpoint(provider, endpoint);
+  }
   if (providerConfigured(provider)) return;
   if (!guided) {
     const setup =

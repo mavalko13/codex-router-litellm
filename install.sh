@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_url=${CODEX_ROUTER_REPOSITORY_URL:-https://github.com/duolahypercho/codex-router.git}
+repository_url=${CODEX_ROUTER_REPOSITORY_URL:-https://github.com/mavalko13/codex-router-mavalko-litellm.git}
 default_data_dir=${XDG_DATA_HOME:-$HOME/.local/share}
 install_dir=$default_data_dir/codex-router
 prepare_only=false
@@ -200,7 +200,7 @@ if [ -z "$repo_dir" ]; then
   if [ -d "$install_dir/.git" ]; then
     origin_url=$(git -C "$install_dir" remote get-url origin 2>/dev/null || true)
     case "$origin_url" in
-      "$repository_url"|https://github.com/duolahypercho/codex-router|https://github.com/duolahypercho/codex-router.git|git@github.com:duolahypercho/codex-router.git)
+      "$repository_url"|https://github.com/mavalko13/codex-router-mavalko-litellm|https://github.com/mavalko13/codex-router-mavalko-litellm.git|git@github.com:mavalko13/codex-router-mavalko-litellm.git)
         ;;
       *)
         die "$install_dir already contains a different Git repository"

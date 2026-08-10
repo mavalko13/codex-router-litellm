@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "litellm-gateway",
+      "displayName": "Your LiteLLM Gateway",
+      "kind": "openai-compatible",
+      "ownedBy": "user",
+      "baseUrl": "http://127.0.0.1:4000/v1",
+      "baseUrlEnv": "CODEX_ROUTER_LITELLM_BASE_URL",
+      "configurableBaseUrl": true,
+      "planNote": "Uses your own LiteLLM endpoint and virtual key. After connecting, curate only the models that your key may access.",
+      "credential": {
+        "environment": [
+          "CODEX_ROUTER_LITELLM_API_KEY"
+        ],
+        "file": "litellm-gateway-api-key.secret",
+        "legacyFiles": [],
+        "keychainServices": [
+          "codex-router-litellm-gateway"
+        ],
+        "prompt": "LiteLLM virtual key",
+        "label": "virtual key"
+      }
+    }
+  ]
+}

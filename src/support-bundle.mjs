@@ -29,6 +29,7 @@ import {
   credentialPaths,
   credentialStatus,
 } from "./provider-credentials.mjs";
+import { readProviderEndpoints } from "./provider-endpoints.mjs";
 import { providerSelectionStatus } from "./provider-selection.mjs";
 
 function runJson(script, args = []) {
@@ -116,6 +117,9 @@ function redactBundle(contents) {
   let redacted = redactCallerUrl(contents);
   for (const secret of knownLocalSecrets()) {
     redacted = redacted.replaceAll(secret, "[REDACTED]");
+  }
+  for (const endpoint of Object.values(readProviderEndpoints())) {
+    redacted = redacted.replaceAll(endpoint, "[REDACTED_ENDPOINT]");
   }
   return redacted;
 }

@@ -10,6 +10,7 @@ import { PROVIDERS } from "./model-registry.mjs";
 import { kimiOAuthStatus } from "./oauth-status.mjs";
 import { SOURCE_ROOT } from "./paths.mjs";
 import { credentialStatus } from "./provider-credentials.mjs";
+import { providerEndpointStatus, writeProviderEndpoint } from "./provider-endpoints.mjs";
 import {
   hasSignInCli,
   installOauthCli,
@@ -223,6 +224,11 @@ function run(command, commandArgs, options = {}) {
 }
 
 function configureProvider(provider) {
+  if (guided && provider.configurableBaseUrl) {
+    const current = providerEndpointStatus(provider, { persistent: true }).value;
+    const endpoint = promptLine(`${provider.displayName} OpenAI-compatible base URL`, current);
+    writeProviderEndpoint(provider, endpoint);
+  }
   if (providerConfigured(provider)) return;
   const session = cliSessionDescriptor(provider);
   if (!guided) {

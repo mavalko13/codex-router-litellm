@@ -157,6 +157,12 @@ test("provider registry exposes configured API and OAuth model families", () => 
     "GH_TOKEN",
     "GITHUB_TOKEN",
   ]);
+  const liteLlmGateway = PROVIDERS.get("litellm-gateway");
+  assert.equal(liteLlmGateway.baseUrl, "http://127.0.0.1:4000/v1");
+  assert.equal(liteLlmGateway.baseUrlEnv, "CODEX_ROUTER_LITELLM_BASE_URL");
+  assert.equal(liteLlmGateway.configurableBaseUrl, true);
+  assert.equal(liteLlmGateway.credential.file, "litellm-gateway-api-key.secret");
+  assert.equal(MODELS.some(({ provider }) => provider === "litellm-gateway"), false);
   const clinepass = PROVIDERS.get("clinepass");
   assert.equal(clinepass.baseUrl, "https://api.cline.bot/api/v1");
   assert.equal(clinepass.baseUrlEnv, "CLINE_API_BASE_URL");

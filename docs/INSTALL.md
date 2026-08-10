@@ -19,7 +19,7 @@ Required software:
 - Node.js 22.19+ (Node.js 24 LTS recommended)
 - `uv`, or Python 3.10+ with `venv`
 - Git for managed one-command installation and rollback
-- At least one Kimi OAuth, Kimi API, or DeepSeek API credential
+- At least one supported provider credential, or a local Ollama runtime
 
 The installer does not silently install a system package manager or runtime.
 When a prerequisite is missing, install it from its official source and rerun
@@ -29,7 +29,7 @@ the same command.
 
 ```text
 Install Codex Router from:
-https://github.com/duolahypercho/codex-router
+https://github.com/mavalko13/codex-router-mavalko-litellm
 
 Follow AGENTS.md. Preserve all of my existing Codex settings and ChatGPT login.
 Use only the provider authentication I choose, safely migrate recognized older
@@ -45,27 +45,27 @@ definition stores the checkout's absolute path.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.sh | sh -s -- --guided
+curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.sh | sh -s -- --guided
 ```
 
 Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Guided
 ```
 
 Clone-and-review installation is also supported:
 
 ```sh
-git clone https://github.com/duolahypercho/codex-router.git
+git clone https://github.com/mavalko13/codex-router-mavalko-litellm.git
 cd codex-router
 ./install.sh --guided
 ```
 
 ```powershell
-git clone https://github.com/duolahypercho/codex-router.git
+git clone https://github.com/mavalko13/codex-router-mavalko-litellm.git
 Set-Location codex-router
 ./install.ps1 -Guided
 ```
@@ -81,7 +81,8 @@ Guided setup walks through numbered steps: a provider list you toggle by
 number (`a` selects all, `n` clears, Enter continues) with a live
 ready/needs-key/needs-sign-in status per provider, credential onboarding for
 anything you selected that is not connected yet, and a review summary before
-any change is made.
+any change is made. When `litellm-gateway` is selected, it asks for the gateway
+URL with visible input and then asks for the virtual key with hidden input.
 
 ## Authentication choices
 
@@ -138,6 +139,30 @@ Windows:
 ./codex-router.ps1 provider-key anthropic-api set
 ./codex-router.ps1 provider-key github-copilot set
 ```
+
+For a LiteLLM gateway you control, configure its OpenAI-compatible base URL
+and a restricted virtual key before curating the models exposed to Codex:
+
+```sh
+./bin/provider-endpoint litellm-gateway set
+./bin/provider-key litellm-gateway set
+./bin/curate-models litellm-gateway
+```
+
+Windows PowerShell uses the same flow:
+
+```powershell
+./codex-router.ps1 provider-endpoint litellm-gateway set
+./codex-router.ps1 provider-key litellm-gateway set
+./codex-router.ps1 discover-models litellm-gateway
+./codex-router.ps1 curate-models litellm-gateway
+```
+
+The endpoint is visible input and is stored in protected per-user router state;
+the virtual key uses the hidden credential prompt. The default endpoint is
+`http://127.0.0.1:4000/v1`. Use a per-user LiteLLM virtual key with only the
+required models, budget, rate limit, and concurrency limit — never the LiteLLM
+master key.
 
 Kimi OAuth, Kimi Platform, DeepSeek, xAI, Anthropic, and GitHub Copilot are separate account and billing
 systems. Never put a credential in chat, a command argument, shell history,

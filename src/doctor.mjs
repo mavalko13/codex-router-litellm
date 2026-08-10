@@ -36,6 +36,7 @@ import {
 } from "./skills-install.mjs";
 import { cliSessionDescriptor } from "./cli-session-credential.mjs";
 import { credentialLabel, credentialStatus } from "./provider-credentials.mjs";
+import { providerEndpointStatus } from "./provider-endpoints.mjs";
 import { providerNeedsCuration } from "./provider-onboarding.mjs";
 import { stateOwnershipStatus } from "./state-owner.mjs";
 import {
@@ -528,6 +529,15 @@ for (const provider of PROVIDERS.values()) {
         ? `Run ${session.loginCommand}, or ./bin/provider-key ${provider.id} set.`
         : `Run ./bin/provider-key ${provider.id} set.`,
   );
+  if (provider.configurableBaseUrl) {
+    const endpoint = providerEndpointStatus(provider, { persistent: true });
+    add(
+      "ok",
+      `${provider.displayName} upstream`,
+      `${endpoint.value} (${endpoint.source})`,
+      `Run ./bin/provider-endpoint ${provider.id} set to change it.`,
+    );
+  }
   // A credential that resolves says nothing about whether the account's plan
   // may use the API. Only warn once the provider is actually selected, so the
   // doctor does not lecture about providers nobody enabled.

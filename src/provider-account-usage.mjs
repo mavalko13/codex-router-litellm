@@ -10,6 +10,7 @@ import {
 import { kimiOAuthStatus } from "./oauth-status.mjs";
 import { PROVIDERS } from "./model-registry.mjs";
 import { resolveProviderCredential } from "./provider-credentials.mjs";
+import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
 import { cooldownUntil } from "./rate-limit-headers.mjs";
 import { rateLimitSnapshotFor } from "./rate-limit-state.mjs";
 import { VERSION } from "./version.mjs";
@@ -260,7 +261,7 @@ async function kimiApiAccount(fetchImpl) {
   const provider = PROVIDERS.get("kimi-api");
   const credential = resolveProviderCredential(provider);
   if (!credential) return { status: "not-configured", source: "official-api", metrics: [] };
-  const baseURL = (process.env[provider.baseUrlEnv] || provider.baseUrl).replace(/\/+$/, "");
+  const baseURL = resolveProviderBaseUrl(provider);
   const host = new URL(baseURL).hostname;
   if (!new Set(["api.moonshot.ai", "api.moonshot.cn"]).has(host)) {
     return localOnly("Account balance is unavailable for a custom Kimi API endpoint");

@@ -162,6 +162,15 @@ function loadRegistry() {
       if (provider.keyless !== undefined && typeof provider.keyless !== "boolean") {
         fail(`provider ${provider.id} has an invalid keyless flag`);
       }
+      if (
+        provider.configurableBaseUrl !== undefined &&
+        typeof provider.configurableBaseUrl !== "boolean"
+      ) {
+        fail(`provider ${provider.id} has an invalid configurableBaseUrl flag`);
+      }
+      if (provider.keyless && provider.configurableBaseUrl) {
+        fail(`keyless provider ${provider.id} may not have a configurable remote endpoint`);
+      }
       if (provider.keyless && provider.credential !== undefined) {
         fail(`keyless provider ${provider.id} must not declare a credential`);
       }

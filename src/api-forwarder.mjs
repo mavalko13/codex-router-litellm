@@ -17,6 +17,7 @@ import {
 } from "./model-registry.mjs";
 import { parseRateLimitHeaders } from "./rate-limit-headers.mjs";
 import { recordRateLimitSnapshot } from "./rate-limit-state.mjs";
+import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
 import { canonicalProviderId, readProviderSelection } from "./provider-selection.mjs";
 import { stripImages, supportsImageInput } from "./vision-bridge.mjs";
 import {
@@ -56,7 +57,7 @@ const QUIET =
 if (!INTERNAL_KEY) throw new Error("MODEL_ROUTER_INTERNAL_KEY is required.");
 
 function providerBaseUrl(provider) {
-  return String(process.env[provider.baseUrlEnv] || provider.baseUrl).replace(/\/+$/, "");
+  return resolveProviderBaseUrl(provider);
 }
 
 // DeepSeek documents low/high/max (docs also accept xhigh as a compat alias).

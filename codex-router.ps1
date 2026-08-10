@@ -7,9 +7,9 @@ if ($Target -ne "codex") {
 $Command = if ($args.Count) { [string]$args[0] } else { "status" }
 $Arguments = if ($args.Count -gt 1) { @($args[1..($args.Count - 1)]) } else { @() }
 $Commands = @(
-  "setup", "install", "doctor", "status", "providers", "provider-key", "enable",
+  "setup", "install", "doctor", "status", "providers", "provider-key", "provider-endpoint", "enable",
   "disable", "uninstall", "update", "rollback", "support-bundle",
-  "smoke-test", "start", "test-model", "discover-models"
+  "smoke-test", "start", "test-model", "discover-models", "curate-models"
 )
 if ($Command -notin $Commands) {
   throw "Unknown command '$Command'. Choose: $($Commands -join ', ')."
@@ -33,6 +33,7 @@ switch ($Command) {
   }
   "providers" { Invoke-RouterNode "src\providers.mjs" $Arguments }
   "provider-key" { Invoke-RouterNode "src\provider-key.mjs" $Arguments }
+  "provider-endpoint" { Invoke-RouterNode "src\provider-endpoint.mjs" $Arguments }
   # `bin/install` accepts --prepare-only/--migrate-known/--force-deps, so the
   # Windows wrapper has to pass the equivalent switches through instead of
   # dropping them; `./model-router.ps1 codex install -ForceDeps` was silently
@@ -66,6 +67,7 @@ switch ($Command) {
   "start" { Invoke-RouterNode "src\start.mjs" $Arguments }
   "test-model" { Invoke-RouterNode "src\compatibility-test.mjs" $Arguments }
   "discover-models" { Invoke-RouterNode "src\model-discovery.mjs" $Arguments }
+  "curate-models" { Invoke-RouterNode "src\curate-models.mjs" $Arguments }
 }
 
 exit 0

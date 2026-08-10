@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { MODELS, PROVIDERS } from "./model-registry.mjs";
 import { credentialStatus, resolveProviderCredential } from "./provider-credentials.mjs";
+import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
 import {
   ensureFreshGitHubCopilotSession,
   githubCopilotCatalogHeaders,
@@ -38,7 +39,7 @@ async function providerPayload(provider) {
   if (fixture) return JSON.parse(readFileSync(path.resolve(fixture), "utf8"));
   const credential = resolveProviderCredential(provider);
   if (!credential) throw new Error(credentialStatus(provider).setup);
-  let baseUrl = String(process.env[provider.baseUrlEnv] || provider.baseUrl).replace(/\/+$/, "");
+  let baseUrl = resolveProviderBaseUrl(provider);
   let headers = provider.protocol === "anthropic"
     ? { "x-api-key": credential.value, "anthropic-version": "2023-06-01" }
     : { Authorization: `Bearer ${credential.value}` };

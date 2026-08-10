@@ -10,6 +10,9 @@ next to the native GPT models.
 Codex Router is an independent community project. It is not affiliated with or
 endorsed by OpenAI, GitHub, Anthropic, Moonshot AI, DeepSeek, OpenRouter,
 opencode, or the referenced opencodex project.
+This distribution is based on the open-source
+[Codex Router](https://github.com/duolahypercho/codex-router) project and keeps
+its upstream attribution and license.
 
 ## Give the link to your agent
 
@@ -17,7 +20,7 @@ Paste this into a Codex task:
 
 ```text
 Install the router from this public repository:
-https://github.com/duolahypercho/codex-router
+https://github.com/mavalko13/codex-router-mavalko-litellm
 
 Follow AGENTS.md. Preserve my existing Codex models, profiles, settings, and
 ChatGPT login. Use only the provider authentication I choose, safely migrate
@@ -34,7 +37,7 @@ hidden local terminal prompt.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.sh \
   | sh -s -- --target codex --guided
 ```
 
@@ -42,12 +45,12 @@ Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-mavalko-litellm/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
 ```
 
 The setup selects providers, detects existing authentication, can run the
-official `kimi login`, prompts invisibly for provider credentials, installs a per-user
+official `kimi login`, asks for a custom LiteLLM URL with visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
 request unless `--smoke-test` is explicitly selected.
 
@@ -137,6 +140,26 @@ grok login --oauth
 
 Native GPT models continue to use Codex directly. There is no separate GPT or
 ChatGPT OAuth provider in the router.
+
+### Your own LiteLLM gateway
+
+`litellm-gateway` connects Codex to an OpenAI-compatible LiteLLM deployment you
+control. It ships no models or shared credentials. Save the endpoint and your
+restricted virtual key locally, discover the models allowed by that key, and
+curate only the entries you want in the picker:
+
+```sh
+./bin/model-router codex provider-endpoint litellm-gateway set
+./bin/model-router codex provider-key litellm-gateway set
+./bin/curate-models litellm-gateway
+./bin/model-router codex doctor
+```
+
+The default endpoint is `http://127.0.0.1:4000/v1`. A saved endpoint survives
+terminal closure and is available to launchd, systemd, and Windows Task
+Scheduler. `CODEX_ROUTER_LITELLM_BASE_URL` can temporarily override it for a
+foreground command. Keep the virtual key restricted by model, budget, rate,
+and concurrency in LiteLLM; never reuse an administrator or master key.
 
 ### GitHub Copilot
 

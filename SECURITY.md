@@ -149,7 +149,7 @@ the redacted doctor/support workflows.
 
 ## Reporting a vulnerability
 
-Use [GitHub Private Vulnerability Reporting](https://github.com/duolahypercho/codex-router/security/advisories/new).
+Use [GitHub Private Vulnerability Reporting](https://github.com/mavalko13/codex-router-mavalko-litellm/security/advisories/new).
 Do not include technical vulnerability details, access tokens, API keys,
 credential files, full prompts, response bodies, or unredacted logs in a public
 issue.
