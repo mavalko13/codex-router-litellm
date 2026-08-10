@@ -515,11 +515,23 @@ test(
       const stateDir = windowsStateDir(testRoot);
       const wrapperPath = path.join(stateDir, "start-codex-router.cmd");
       const launcherPath = path.join(stateDir, "start-codex-router-hidden.vbs");
+      const stubs = schedulerStubs(path.join(testRoot, "scheduler"));
       const run = (command) =>
-        JSON.parse(serviceCommand("service-windows.mjs", "win32", testRoot, command));
+        JSON.parse(
+          serviceCommand(
+            "service-windows.mjs",
+            "win32",
+            testRoot,
+            command,
+            "codex",
+            root,
+            { PATH: stubs.path },
+          ),
+        );
 
-      // schtasks.exe and powershell.exe are absent off Windows, and every call
-      // to them is best effort, so only the generated files are exercised here.
+      // Scheduler calls use isolated stubs: a real registration failure is no
+      // longer reported as success, so this file-lifecycle test must provide a
+      // functioning scheduler rather than relying on missing executables.
       assert.equal(run("install").installed, true);
       assert.equal(existsSync(wrapperPath), true);
       assert.equal(existsSync(launcherPath), true);
@@ -615,7 +627,7 @@ function runWindowsService(testRoot, command, extraEnv = {}) {
 }
 
 test(
-  "a blocked registration restarts whichever task definition survived",
+  "a blocked registration restores the survivor but still reports failure",
   { skip: process.platform === "win32" },
   () => {
     const testRoot = mkdtempSync(path.join(os.tmpdir(), "codex-router-win-recover-"));
@@ -623,14 +635,15 @@ test(
       // Registration is blocked through both routes, the way a restricted or
       // non-elevated terminal blocks it. endTask() has already stopped the
       // running router by then, so returning here would trade a working install
-      // for nothing at all -- the regression this guards.
+      // for nothing at all -- the recovery this guards. The install must still
+      // fail: health may belong to an orphaned old process and cannot prove the
+      // replacement task was registered.
       const stubs = schedulerStubs(path.join(testRoot, "survivor"), {
         schtasksFail: "/Create",
         powershellFail: "Register-ScheduledTask",
       });
       const result = runWindowsService(testRoot, "install", { PATH: stubs.path });
-      assert.equal(result.status, 0, result.stderr);
-      assert.equal(JSON.parse(result.stdout).installed, true);
+      assert.notEqual(result.status, 0);
 
       const calls = stubs.calls();
       const at = (needle) => calls.findIndex((line) => line.includes(needle));
@@ -664,9 +677,7 @@ test(
         powershellFail: "Register-ScheduledTask",
       });
       const result = runWindowsService(testRoot, "install", { PATH: stubs.path });
-      // Still best effort: the launchers are written and the caller retries.
-      assert.equal(result.status, 0, result.stderr);
-      assert.equal(JSON.parse(result.stdout).installed, true);
+      assert.notEqual(result.status, 0);
 
       const calls = stubs.calls();
       assert.ok(calls.some((line) => line.includes("/Query")));
@@ -704,15 +715,35 @@ test(
         `the wait must poll until the state leaves Running:\n${calls.join("\n")}`,
       );
       const lastState = calls.findLastIndex((line) => line.includes("Get-ScheduledTask"));
+      const ownedTree = calls.findIndex(
+        (line) => line.includes("Get-CimInstance Win32_Process") && line.includes("taskkill.exe"),
+      );
       assert.ok(
-        lastState < calls.findIndex((line) => line.includes("/Run")),
-        `the new instance must start after the old one has gone:\n${calls.join("\n")}`,
+        ownedTree > calls.findIndex((line) => line.includes("/End")),
+        `the orphan tree cleanup must run after /End:\n${calls.join("\n")}`,
+      );
+      assert.ok(
+        lastState < ownedTree && ownedTree < calls.findIndex((line) => line.includes("/Run")),
+        `the replacement must start only after task and orphan cleanup:\n${calls.join("\n")}`,
       );
     } finally {
       rmSync(testRoot, { recursive: true, force: true });
     }
   },
 );
+
+test("Windows stops the live launcher before replacing files it holds open", () => {
+  const source = readFileSync(path.join(root, "src", "service-windows.mjs"), "utf8");
+  const installBranch = source.slice(
+    source.indexOf('} else if (command === "install")'),
+    source.indexOf('} else if (command === "uninstall")'),
+  );
+  const stop = installBranch.indexOf("endTask();");
+  const write = installBranch.indexOf("writeLaunchers();");
+  const register = installBranch.indexOf("installTask();");
+  assert.ok(stop !== -1 && write !== -1 && register !== -1);
+  assert.ok(stop < write && write < register);
+});
 
 test(
   "an instance that never stops cannot hang the install",

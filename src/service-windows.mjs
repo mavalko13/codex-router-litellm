@@ -18,6 +18,7 @@ import {
   STATE_DIR,
   TARGET,
 } from "./paths.mjs";
+import { terminateWindowsProcessTrees } from "./windows-process-tree.mjs";
 
 const effectivePlatform = process.env.CODEX_ROUTER_SERVICE_PLATFORM || process.platform;
 const command = process.argv[2] || "status";
@@ -25,6 +26,7 @@ const renderCommands = new Set(["render", "render-launcher", "render-task"]);
 const taskName = "Codex Router";
 const wrapperPath = path.join(STATE_DIR, "start-codex-router.cmd");
 const launcherPath = path.join(STATE_DIR, "start-codex-router-hidden.vbs");
+const startPath = path.join(SOURCE_ROOT, "src", "start.mjs");
 const schtasksBinary = process.env.CODEX_ROUTER_SCHTASKS_BIN || "schtasks.exe";
 const schtasksPrefixArgs = process.env.CODEX_ROUTER_SCHTASKS_ARGS_JSON
   ? JSON.parse(process.env.CODEX_ROUTER_SCHTASKS_ARGS_JSON)
@@ -236,15 +238,35 @@ function waitForTaskToStop() {
   }
 }
 
+// Task Scheduler terminates only its direct wscript.exe action. Windows leaves
+// the child cmd.exe -> node.exe tree alive, so the old router keeps every port
+// while the task itself already reports Ready. A subsequent /Run then starts a
+// second tree that dies on EADDRINUSE, while a health probe accidentally accepts
+// the orphaned old router. Kill only node.exe processes whose command line names
+// this checkout's exact start.mjs path, and ask taskkill to include their child
+// gateway/forwarder processes. The PowerShell script also waits for the tree to
+// disappear so the replacement cannot race the released ports.
+function terminateOwnedServiceTrees() {
+  const candidates = taskStateBinary
+    ? [[taskStateBinary, taskStatePrefixArgs]]
+    : [["powershell.exe", []], ["pwsh.exe", []]];
+  terminateWindowsProcessTrees(startPath, {
+    candidates,
+    timeoutMs: TASK_STOP_TIMEOUT_MS + TASK_STATE_TIMEOUT_MS,
+  });
+}
+
 function endTask() {
   try {
     schtasks(["/End", "/TN", taskName], { quiet: true });
   } catch {
-    // The task may not exist, or may not be running; either way there is no
-    // instance left to wait for.
-    return;
+    // /End also fails for an installed task whose direct action already exited.
+    // That is exactly the orphan-tree state, so only return when no definition
+    // exists at all.
+    if (!taskExists()) return;
   }
   waitForTaskToStop();
+  terminateOwnedServiceTrees();
 }
 
 // Only a task that still exists can be started. `Register-ScheduledTask -Force`
@@ -396,32 +418,33 @@ if (command === "render") {
   restoreServiceSnapshot(snapshotPath());
 } else if (command === "install") {
   try {
-    // Writing the launchers belongs inside the try: renameSync over the .vbs
-    // raises a sharing violation while a running wscript.exe still holds it
-    // open, and that used to throw out of install with nothing to catch it.
-    writeLaunchers();
     // An upgrade from the console-visible task may still have that instance
     // running. Register-ScheduledTask -Force replaces the definition under the
     // same task name, so no duplicate is left behind, but it does not stop the
     // running instance, and MultipleInstances IgnoreNew would then drop the new
     // hidden run — the console window would survive until the next logon.
     endTask();
+    // wscript.exe holds the VBS file open for its lifetime. Stop it and its
+    // owned child tree before atomically replacing either launcher, otherwise
+    // renameSync raises a sharing violation during every real upgrade.
+    writeLaunchers();
     installTask();
     schtasks(["/Run", "/TN", taskName], { quiet: true });
-  } catch {
-    // Scheduled-task creation can be restricted in a non-elevated terminal. The
-    // launchers are still written, so the install is reported as success and
-    // the caller can retry -- but endTask() has already stopped whatever was
-    // running by this point, so simply returning would take a working router
-    // down in exchange for nothing. Start whichever definition survived the
-    // failed registration. When none did there is nothing to restore: no
-    // snapshot was taken, and re-creating the old console-visible action would
-    // reintroduce the very defect this launcher exists to fix.
+  } catch (error) {
+    // Scheduled-task creation can be restricted in a non-elevated terminal.
+    // endTask() has already stopped whatever was running by this point, so
+    // simply throwing would take a recoverable old task down before the shared
+    // transaction restores its snapshot. Start whichever definition survived
+    // the failed registration, then preserve the original failure for rollback.
+    // The caller must not receive success:
+    // a health probe can otherwise accept an orphaned old router and commit an
+    // installation whose scheduled task is merely Ready.
     try {
       if (taskExists()) schtasks(["/Run", "/TN", taskName], { quiet: true });
     } catch {
       // Nothing left to start; the caller's readiness check reports the failure.
     }
+    throw error;
   }
   process.stdout.write(`${JSON.stringify({ installed: true, path: wrapperPath })}\n`);
 } else if (command === "uninstall") {

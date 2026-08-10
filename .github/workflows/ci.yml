@@ -10,27 +10,68 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      windows_service_only: ${{ steps.changes.outputs.windows_service_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: changes
+        name: Select the smallest safe test surface
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          windows_service_only=false
+          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            windows_service_only=true
+            while IFS= read -r file; do
+              case "$file" in
+                src/service-windows.mjs|src/windows-process-tree.mjs|install.ps1|model-router.cmd|model-router.ps1|codex-router.ps1|test/service-render.test.mjs|test/windows-process-tree.test.mjs|test/installer-scripts.test.mjs|test/installer-handoff.test.mjs|test/public-workflows.test.mjs|CHANGELOG.md|README.md|README.ru.md|docs/*|.github/workflows/ci.yml) ;;
+                *) windows_service_only=false ;;
+              esac
+            done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          fi
+          echo "windows_service_only=$windows_service_only" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: scope
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: No-op on non-Windows for a Windows service-only change
+        if: needs.scope.outputs.windows_service_only == 'true' && runner.os != 'Windows'
+        run: echo "Windows service-only change; covered by the Windows job."
       - uses: actions/checkout@v7
+        if: needs.scope.outputs.windows_service_only != 'true' || runner.os == 'Windows'
       - uses: actions/setup-node@v7
+        if: needs.scope.outputs.windows_service_only != 'true' || runner.os == 'Windows'
         with:
           node-version: "24"
           cache: npm
       - run: npm ci
+        if: needs.scope.outputs.windows_service_only != 'true' || runner.os == 'Windows'
       - run: npm run check
+        if: needs.scope.outputs.windows_service_only != 'true' || runner.os == 'Windows'
+      - name: Run the Windows service and installer regressions
+        if: needs.scope.outputs.windows_service_only == 'true' && runner.os == 'Windows'
+        run: node --test test/service-render.test.mjs test/windows-process-tree.test.mjs test/installer-scripts.test.mjs test/installer-handoff.test.mjs
       - run: npm test
+        if: needs.scope.outputs.windows_service_only != 'true'
       - run: npm audit --omit=dev --audit-level=high
+        if: needs.scope.outputs.windows_service_only != 'true'
       - name: Check shell syntax
-        if: runner.os != 'Windows'
+        if: needs.scope.outputs.windows_service_only != 'true' && runner.os != 'Windows'
         run: for file in install.sh bin/* scripts/build-desktop-tray.sh; do [ "$(head -n 1 "$file")" != '#!/bin/sh' ] || sh -n "$file"; done
       - name: Check installer help
-        if: runner.os != 'Windows'
+        if: needs.scope.outputs.windows_service_only != 'true' && runner.os != 'Windows'
         run: ./install.sh --help
       - name: Parse PowerShell installer
         if: runner.os == 'Windows'
@@ -47,27 +88,37 @@ jobs:
           }
 
   desktop:
+    needs: scope
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: No-op for a Windows service-only change
+        if: needs.scope.outputs.windows_service_only == 'true'
+        run: echo "Desktop sources are unchanged."
       - uses: actions/checkout@v7
+        if: needs.scope.outputs.windows_service_only != 'true'
       - uses: actions/setup-node@v7
+        if: needs.scope.outputs.windows_service_only != 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       - name: Select stable Rust
+        if: needs.scope.outputs.windows_service_only != 'true'
         run: |
           rustup update stable
           rustup default stable
       - name: Install Linux desktop libraries
-        if: runner.os == 'Linux'
+        if: needs.scope.outputs.windows_service_only != 'true' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: npm ci --prefix apps/desktop
+        if: needs.scope.outputs.windows_service_only != 'true'
       - run: npm run check --prefix apps/desktop
+        if: needs.scope.outputs.windows_service_only != 'true'
       - run: npm run build:binary --prefix apps/desktop
+        if: needs.scope.outputs.windows_service_only != 'true'
