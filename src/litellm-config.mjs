@@ -3,6 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { protectPrivateFile } from "./file-security.mjs";
+import {
+  API_SURFACE_RESPONSES,
+  effectiveApiSurface,
+} from "./api-surface.mjs";
 import { LITELLM_CONFIG_PATH } from "./paths.mjs";
 import { MODELS, providerForModel } from "./model-registry.mjs";
 import { assertStateOwnership } from "./state-owner.mjs";
@@ -45,7 +49,7 @@ export function renderLiteLlmConfig() {
     const translatedModel =
       provider.kind === "oauth" ? model.upstreamModel : model.gatewayModel;
     const protocol = provider.protocol === "anthropic" ? "anthropic" : "openai";
-    const responsesSurface = provider.protocol === "openai-responses";
+    const responsesSurface = effectiveApiSurface(model, provider) === API_SURFACE_RESPONSES;
     lines.push(
       `  - model_name: ${yamlString(model.gatewayModel)}`,
       "    litellm_params:",

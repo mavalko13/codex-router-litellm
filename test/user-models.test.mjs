@@ -7,9 +7,15 @@ import { test } from "node:test";
 const stateDir = mkdtempSync(path.join(os.tmpdir(), "user-models-test-"));
 process.env.CODEX_ROUTER_STATE_DIR = stateDir;
 
-const { userModelEntry, readUserModels, writeUserModels, USER_MODELS_PATH } = await import(
-  "../src/user-models.mjs"
-);
+const {
+  userModelEntry,
+  readUserModels,
+  readUserModelsDetail,
+  updateUserModels,
+  withUserModelsLock,
+  writeUserModels,
+  USER_MODELS_PATH,
+} = await import("../src/user-models.mjs");
 
 test("userModelEntry fills conservative picker metadata", () => {
   const entry = userModelEntry({
@@ -100,9 +106,42 @@ test("user models round-trip through the protected state file", () => {
   assert.ok(USER_MODELS_PATH.startsWith(stateDir));
 });
 
+test("user-model updates read and write under one transaction", () => {
+  const before = userModelEntry({
+    providerId: "deepseek",
+    upstreamId: "transaction-before",
+    priority: 301,
+  });
+  const after = userModelEntry({
+    providerId: "deepseek",
+    upstreamId: "transaction-after",
+    priority: 302,
+  });
+  writeUserModels([before]);
+  const value = updateUserModels((latest) => ({
+    models: [...latest.models, after],
+    value: latest.models.length,
+  }));
+  assert.equal(value, 1);
+  assert.deepEqual(readUserModels().map((model) => model.upstreamModel), [
+    "transaction-before",
+    "transaction-after",
+  ]);
+});
+
+test("a concurrent user-model transaction fails closed instead of overwriting", () => {
+  withUserModelsLock(() => {
+    assert.throws(
+      () => withUserModelsLock(() => undefined),
+      /Another user-model update is still running/,
+    );
+  });
+});
+
 test("readUserModels returns an empty list when the file is absent or invalid", () => {
   writeFileSync(USER_MODELS_PATH, "not-json\n");
   assert.deepEqual(readUserModels(), []);
+  assert.deepEqual(readUserModelsDetail(), { exists: true, valid: false, models: [] });
 });
 
 test("registry merges valid user models and skips collisions", async () => {

@@ -67,11 +67,11 @@ function atomicWrite(value) {
 export function recordInstall() {
   const previous = readInstallManifest();
   // The skills field is derived from the checkout's skills/ directory, not
-  // from post-install filesystem state: bin/install records the manifest
-  // before the skills step runs, so managedSkillNames() would report the
-  // previous run's state. The checkout source is deterministic at this point
-  // and correct for provenance, because the skills installed moments later
-  // come from that same checkout.
+  // from post-install filesystem state: the install transaction records the
+  // manifest before the best-effort skills step runs, so filesystem state would
+  // report the previous run's state. The checkout source is deterministic at
+  // this point and correct for provenance, because the skills installed moments
+  // later come from that same checkout.
   const skills = {
     names: packSkillNames(),
     count: packSkillNames().length,

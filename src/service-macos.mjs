@@ -4,7 +4,9 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -29,7 +31,10 @@ if (effectivePlatform !== "darwin" && command !== "render") {
 const userId = typeof process.getuid === "function" ? process.getuid() : 501;
 const domain = `gui/${userId}`;
 const service = `${domain}/${SERVICE_LABEL}`;
-const launchctl = "/bin/launchctl";
+const launchctl = process.env.CODEX_ROUTER_LAUNCHCTL_BIN || "/bin/launchctl";
+if (!path.isAbsolute(launchctl)) {
+  throw new Error("CODEX_ROUTER_LAUNCHCTL_BIN must be an absolute path.");
+}
 const launchctlRetryWait = new Int32Array(new SharedArrayBuffer(4));
 const nodeBinary = process.env.CODEX_ROUTER_NODE_BIN || process.execPath;
 if (!path.isAbsolute(nodeBinary)) {
@@ -179,8 +184,73 @@ function bootstrap() {
   }
 }
 
-if (!new Set(["install", "uninstall", "start", "stop", "restart", "status", "render"]).has(command)) {
-  console.error("Usage: service-macos.mjs install|uninstall|start|stop|restart|status|render");
+function snapshotPath() {
+  const target = process.argv[3];
+  if (!target || !path.isAbsolute(target)) {
+    throw new Error(`${command} requires an absolute snapshot path.`);
+  }
+  return target;
+}
+
+function definitionSnapshot() {
+  if (!existsSync(LAUNCH_AGENT_PATH)) return { present: false };
+  return {
+    present: true,
+    contents: readFileSync(LAUNCH_AGENT_PATH).toString("base64"),
+    mode: statSync(LAUNCH_AGENT_PATH).mode & 0o777,
+  };
+}
+
+function restoreDefinition(definition) {
+  if (!definition?.present) {
+    if (existsSync(LAUNCH_AGENT_PATH)) unlinkSync(LAUNCH_AGENT_PATH);
+    return;
+  }
+  mkdirSync(path.dirname(LAUNCH_AGENT_PATH), { recursive: true });
+  const temporary = `${LAUNCH_AGENT_PATH}.restore.${process.pid}`;
+  writeFileSync(temporary, Buffer.from(definition.contents, "base64"), {
+    mode: definition.mode,
+  });
+  chmodSync(temporary, definition.mode);
+  renameSync(temporary, LAUNCH_AGENT_PATH);
+}
+
+function writeServiceSnapshot(target) {
+  const definition = definitionSnapshot();
+  const running = Boolean(loaded());
+  if (running && !definition.present) {
+    throw new Error("Cannot snapshot a loaded launchd service without its definition.");
+  }
+  const snapshot = {
+    version: 1,
+    platform: "darwin",
+    definition,
+    running,
+  };
+  writeFileSync(target, `${JSON.stringify(snapshot, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  chmodSync(target, 0o600);
+}
+
+function restoreServiceSnapshot(target) {
+  const snapshot = JSON.parse(readFileSync(target, "utf8"));
+  if (snapshot?.version !== 1 || snapshot.platform !== "darwin") {
+    throw new Error(`Invalid launchd service snapshot: ${target}`);
+  }
+  bootout();
+  restoreDefinition(snapshot.definition);
+  if (snapshot.running) {
+    if (!snapshot.definition?.present) {
+      throw new Error("Cannot restore a running launchd service without its definition.");
+    }
+    bootstrap();
+  }
+}
+
+if (!new Set(["install", "uninstall", "start", "stop", "restart", "status", "render", "snapshot", "restore"]).has(command)) {
+  console.error("Usage: service-macos.mjs install|uninstall|start|stop|restart|status|render|snapshot|restore");
   process.exit(2);
 }
 
@@ -200,6 +270,10 @@ if (command === "render") {
       state,
     })}\n`,
   );
+} else if (command === "snapshot") {
+  writeServiceSnapshot(snapshotPath());
+} else if (command === "restore") {
+  restoreServiceSnapshot(snapshotPath());
 } else if (command === "install") {
   bootout();
   // Only safe here. launchd opens StandardOutPath before it execs the service,

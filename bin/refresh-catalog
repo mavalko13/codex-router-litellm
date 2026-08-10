@@ -13,7 +13,19 @@ restore_config() {
   if [ "$restore" = true ]; then node src/config-manager.mjs enable >/dev/null 2>&1 || true; fi
 }
 trap restore_config EXIT HUP INT TERM
+node src/auto-curate-models.mjs
+# model-registry.mjs is an import-time snapshot, so keep each generation step
+# in its own process and publish routes before the picker catalog.
+node src/litellm-config.mjs
 node src/catalog.mjs --refresh-native --bundled-native
+# A newly curated model changes both the gateway routes and the in-memory
+# forwarder registry. Keep the durable marker until the restarted service has
+# rebuilt both successfully; start.mjs clears it only after publication.
+if node --input-type=module -e \
+  'import("./src/auto-curate-state.mjs").then(({autoCurateRefreshPending}) => process.exit(autoCurateRefreshPending() ? 0 : 1))'
+then
+  node src/service.mjs restart
+fi
 restore_config
 restore=false
 trap - EXIT HUP INT TERM

@@ -17,16 +17,17 @@ Codex source code.
 flowchart LR
   C["Codex App or CLI"] -->|"Responses API on loopback"| R["Codex Router :4102"]
   R -->|"internal key"| L["Local LiteLLM adapter :4100"]
-  L -->|"Chat Completions"| F["Credential forwarder :4103"]
+  L -->|"Per-model Responses or Chat Completions"| F["Credential forwarder :4103"]
   F -->|"operator virtual key"| G["Operator LiteLLM gateway"]
   G --> M["Models allowed by that key"]
 ```
 
-The local adapter converts Codex Responses requests and streams into the
-OpenAI-compatible Chat Completions contract. The credential forwarder removes
-Codex and ChatGPT identity headers, injects only the selected LiteLLM virtual
-key, and sends the request to the saved upstream URL. Native GPT models bypass
-this route and continue to use Codex normally.
+The local adapter routes each model through its declared OpenAI-compatible
+surface: Chat Completions by default, or Responses when explicitly selected.
+The credential forwarder removes Codex and ChatGPT identity headers, injects
+only the selected LiteLLM virtual key, and sends the request to the saved
+upstream URL. Native GPT models bypass this route and continue to use Codex
+normally.
 
 ## Interactive installation
 
@@ -52,8 +53,10 @@ The installer asks for these values in order:
 2. **LiteLLM virtual key** — hidden input. The key is never accepted as a
    command argument and is not printed after entry.
 
-After installation, discover and curate the models that the virtual key may
-use:
+During installation/startup, the router automatically discovers models that
+the saved virtual key may use and publishes new IDs with conservative local
+metadata. These commands remain useful for inspection, manual metadata, and
+route corrections:
 
 ```sh
 ./bin/model-router codex discover-models litellm-gateway
@@ -71,6 +74,17 @@ On Windows, use the same commands through the PowerShell wrapper:
 
 Fully quit and reopen Codex after curation so it reloads the generated model
 catalog.
+
+Chat Completions is the safe default for this generic provider; the checked-in
+trusted `codex-gpt-` prefix selects Responses automatically. If another
+LiteLLM alias requires the Responses endpoint, set its route explicitly:
+
+```sh
+./bin/curate-models litellm-gateway --models MODEL_ID --api-surface responses --apply
+```
+
+This also updates an existing auto-curated entry without erasing its manually
+edited metadata. Use `--api-surface chat-completions` to switch it back.
 
 ## Local state and precedence
 
@@ -112,9 +126,25 @@ parallel-request limit. Never distribute the LiteLLM master key or an
 administrator key.
 
 The router's `/models` discovery sees only what the supplied key and gateway
-return. Curation is local and explicit: discovering a model does not publish it
-to the picker, and a model curated on one computer does not silently appear on
-another.
+return. `litellm-gateway` is explicitly opted in as a trusted, operator-owned
+provider, so it checks the live catalog during installation/startup and every
+five minutes. Background discovery deliberately uses the saved restricted key,
+not an environment-only override.
+
+New IDs are appended to protected `user-models.json` with text-only,
+131072-token, high-effort defaults and no unverified vision, search,
+reasoning-summary, or `apply_patch` capability. Existing entries and manual
+edits win. A missing ID is logged but never pruned automatically, because it
+may reflect a transient ACL or catalog response. A discovery or publication
+failure keeps the last usable routes and picker catalog.
+
+When new IDs are added, the supervisor restarts only the local router stack and
+publishes gateway routes before the picker catalog. If that sequence is
+interrupted, a durable pending marker makes the next startup retry it. Codex
+Desktop still needs a full quit and reopen to load the changed picker catalog.
+Set `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0` to disable periodic checks, or set
+an integer of at least `60000` milliseconds to change the interval. Startup
+discovery and manual curation remain available.
 
 ## Updating, rollback, and branches
 
@@ -134,7 +164,10 @@ Update the installed checkout with:
 If the update does not pass its install gates, the updater restores the prior
 revision. An operator can also run `./bin/rollback` (or
 `./codex-router.ps1 rollback` on Windows) while the retained revision is
-available.
+available. Update and repair run the same transactional publication order as
+installation. If generation, service startup, or health verification fails,
+the previous managed files and service definition are restored. Fully quit and
+reopen Codex after a successful update that changes the picker catalog.
 
 ## Verification and troubleshooting
 
@@ -150,8 +183,9 @@ Start with:
 - A `401` usually means the virtual key is wrong, expired, or not accepted by
   that LiteLLM gateway.
 - A `403` usually means the key exists but lacks access to the chosen model.
-- An empty picker after a successful connection means no models have been
-  curated yet; run `curate-models` and reopen Codex.
+- An empty picker after a successful connection means startup discovery did
+  not publish models yet; inspect `discover-models`, run `curate-models` if
+  needed, and reopen Codex.
 - A connection failure usually means the saved URL is unreachable from the
   user's computer or lacks the OpenAI-compatible `/v1` prefix expected by the
   deployment.

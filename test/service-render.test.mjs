@@ -54,6 +54,11 @@ function render(script, platform, testRoot, target = "codex", sourceRoot = root)
   return serviceCommand(script, platform, testRoot, "render", target, sourceRoot);
 }
 
+function writeExecutable(target, contents) {
+  writeFileSync(target, contents, { mode: 0o700 });
+  chmodSync(target, 0o700);
+}
+
 // Mirrors src/service-windows.mjs: MODEL_ROUTER_STATE_DIR wins over every other
 // state-directory source, and the fixture name deliberately carries a space.
 function windowsStateDir(testRoot) {
@@ -86,6 +91,7 @@ test("background service definitions render for macOS, Linux, and Windows", () =
     assert.match(windows, /@echo off\r?\n/);
     assert.match(windows, /set "CODEX_ROUTER_STATE_DIR=/);
     assert.match(windows, /litellm|start\.mjs/);
+    assert.match(windows, /if "%router_status%"=="75" goto router_restart/);
     // The Python gateway must run with UTF-8 output even when the host
     // console code page is not UTF-8 (see service-windows.mjs).
     assert.match(windows, /set "PYTHONIOENCODING=utf-8"/);
@@ -131,6 +137,188 @@ test("packaged services persist stable source and Node paths", () => {
     assert.ok(systemd.includes(`WorkingDirectory=${stableRoot.replaceAll("%", "%%")}`));
     assert.ok(systemd.includes(`ExecStart=${systemdQuoted(stableNode)}`));
     assert.ok(systemd.includes(`Environment="CODEX_ROUTER_PACKAGE_MANAGER=homebrew"`));
+  } finally {
+    rmSync(testRoot, { recursive: true, force: true });
+  }
+});
+
+test("macOS, Linux, and Windows service snapshots restore the exact old definition and running state", () => {
+  const testRoot = mkdtempSync(path.join(os.tmpdir(), "codex-router-service-rollback-"));
+  const fakeBin = path.join(testRoot, "bin");
+  mkdirSync(fakeBin, { recursive: true });
+  try {
+    const managerState = path.join(testRoot, "manager-state");
+    const managerEnabled = path.join(testRoot, "manager-enabled");
+    const taskPresent = path.join(testRoot, "task-present");
+    const taskXml = path.join(testRoot, "task.xml");
+    const launchctl = path.join(fakeBin, "launchctl");
+    writeExecutable(
+      launchctl,
+      `#!/bin/sh
+case "$1" in
+  print) [ "$(cat "$CODEX_ROUTER_TEST_MANAGER_STATE")" = running ] && echo "state = running" || exit 1 ;;
+  bootout) echo stopped > "$CODEX_ROUTER_TEST_MANAGER_STATE" ;;
+  bootstrap|kickstart) echo running > "$CODEX_ROUTER_TEST_MANAGER_STATE" ;;
+  enable|disable) ;;
+  *) exit 2 ;;
+esac
+exit 0
+`,
+    );
+    const systemctl = path.join(fakeBin, "systemctl.mjs");
+    writeFileSync(
+      systemctl,
+      `import { readFileSync, writeFileSync } from "node:fs";
+let args = process.argv.slice(2);
+if (args[0] === "--user") args = args.slice(1);
+const [command, ...rest] = args;
+const state = process.env.CODEX_ROUTER_TEST_MANAGER_STATE;
+const enabled = process.env.CODEX_ROUTER_TEST_MANAGER_ENABLED;
+const read = (target) => readFileSync(target, "utf8").trim();
+const write = (target, value) => writeFileSync(target, value + "\\n");
+if (command === "is-active") {
+  if (read(state) === "running") process.stdout.write("active\\n");
+  else { process.stdout.write("inactive\\n"); process.exitCode = 3; }
+} else if (command === "is-enabled") {
+  if (read(enabled) === "enabled") process.stdout.write("enabled\\n");
+  else { process.stdout.write("disabled\\n"); process.exitCode = 1; }
+} else if (command === "daemon-reload") {
+  // no-op
+} else if (command === "stop") {
+  write(state, "stopped");
+} else if (command === "start" || command === "restart") {
+  write(state, "running");
+} else if (command === "enable") {
+  write(enabled, "enabled");
+  if (rest[0] === "--now") write(state, "running");
+} else if (command === "disable") {
+  write(enabled, "disabled");
+  if (rest[0] === "--now") write(state, "stopped");
+} else {
+  process.exitCode = 2;
+}
+`,
+    );
+    const schtasks = path.join(fakeBin, "schtasks.mjs");
+    writeFileSync(
+      schtasks,
+      `import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const command = args[0];
+const present = process.env.CODEX_ROUTER_TEST_TASK_PRESENT;
+const xml = process.env.CODEX_ROUTER_TEST_TASK_XML;
+const state = process.env.CODEX_ROUTER_TEST_MANAGER_STATE;
+const read = (target) => readFileSync(target, "utf8").trim();
+const write = (target, value) => writeFileSync(target, value + "\\n");
+if (command === "/Query") {
+  if (read(present) !== "yes") process.exit(1);
+  if (args.includes("/XML")) process.stdout.write(readFileSync(xml));
+  else process.stdout.write("task\\n");
+} else if (command === "/End") write(state, "ready");
+else if (command === "/Delete") write(present, "no");
+else if (command === "/Run") write(state, "running");
+else if (command === "/Create") {
+  const index = args.indexOf("/XML");
+  if (index !== -1) copyFileSync(args[index + 1], xml);
+  write(present, "yes");
+} else process.exitCode = 2;
+`,
+    );
+    const taskState = path.join(fakeBin, "task-state.mjs");
+    writeFileSync(
+      taskState,
+      `import { readFileSync } from "node:fs";
+if (readFileSync(process.env.CODEX_ROUTER_TEST_TASK_PRESENT, "utf8").trim() !== "yes") process.exit(1);
+process.stdout.write(readFileSync(process.env.CODEX_ROUTER_TEST_MANAGER_STATE, "utf8").trim());
+`,
+    );
+
+    const commonEnv = {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+      CODEX_ROUTER_TEST_MANAGER_STATE: managerState,
+      CODEX_ROUTER_TEST_MANAGER_ENABLED: managerEnabled,
+      CODEX_ROUTER_TEST_TASK_PRESENT: taskPresent,
+      CODEX_ROUTER_TEST_TASK_XML: taskXml,
+    };
+
+    // launchd definition and loaded state.
+    const launchAgents = path.join(testRoot, "launch-agents");
+    const plist = path.join(launchAgents, "io.github.codex-router.plist");
+    const macSnapshot = path.join(testRoot, "mac-service.json");
+    mkdirSync(launchAgents, { recursive: true });
+    writeFileSync(plist, "old launchd definition\n");
+    writeFileSync(managerState, "running\n");
+    // serviceCommand does not forward extra argv; invoke snapshot/restore with their path.
+    const runService = (script, platform, args, env) =>
+      execFileSync(process.execPath, [path.join(root, "src", script), ...args], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...serviceEnv(platform, testRoot), ...env },
+      });
+    runService("service-macos.mjs", "darwin", ["snapshot", macSnapshot], {
+      ...commonEnv,
+      CODEX_ROUTER_LAUNCHCTL_BIN: launchctl,
+      MODEL_ROUTER_LAUNCH_AGENTS_DIR: launchAgents,
+    });
+    writeFileSync(plist, "new launchd definition\n");
+    writeFileSync(managerState, "running\n");
+    runService("service-macos.mjs", "darwin", ["restore", macSnapshot], {
+      ...commonEnv,
+      CODEX_ROUTER_LAUNCHCTL_BIN: launchctl,
+      MODEL_ROUTER_LAUNCH_AGENTS_DIR: launchAgents,
+    });
+    assert.equal(readFileSync(plist, "utf8"), "old launchd definition\n");
+    assert.equal(readFileSync(managerState, "utf8"), "running\n");
+
+    // systemd definition, enabled bit, and active state.
+    const unit = path.join(testRoot, "xdg config", "systemd", "user", "codex-router.service");
+    const linuxSnapshot = path.join(testRoot, "linux-service.json");
+    mkdirSync(path.dirname(unit), { recursive: true });
+    writeFileSync(unit, "old systemd definition\n");
+    writeFileSync(managerState, "running\n");
+    writeFileSync(managerEnabled, "enabled\n");
+    const linuxEnv = {
+      ...commonEnv,
+      CODEX_ROUTER_SYSTEMCTL_BIN: process.execPath,
+      CODEX_ROUTER_SYSTEMCTL_ARGS_JSON: JSON.stringify([systemctl]),
+    };
+    runService("service-linux.mjs", "linux", ["snapshot", linuxSnapshot], linuxEnv);
+    writeFileSync(unit, "new systemd definition\n");
+    writeFileSync(managerState, "stopped\n");
+    writeFileSync(managerEnabled, "disabled\n");
+    runService("service-linux.mjs", "linux", ["restore", linuxSnapshot], linuxEnv);
+    assert.equal(readFileSync(unit, "utf8"), "old systemd definition\n");
+    assert.equal(readFileSync(managerState, "utf8"), "running\n");
+    assert.equal(readFileSync(managerEnabled, "utf8"), "enabled\n");
+
+    // Task Scheduler XML, wrapper/launcher bytes, and running state.
+    const stateDir = path.join(testRoot, "codex router state");
+    const wrapper = path.join(stateDir, "start-codex-router.cmd");
+    const launcher = path.join(stateDir, "start-codex-router-hidden.vbs");
+    const windowsSnapshot = path.join(testRoot, "windows-service.json");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(wrapper, "old wrapper\n");
+    writeFileSync(launcher, "old launcher\n");
+    writeFileSync(taskXml, "<Task>old</Task>\n");
+    writeFileSync(taskPresent, "yes\n");
+    writeFileSync(managerState, "running\n");
+    const windowsEnv = {
+      ...commonEnv,
+      CODEX_ROUTER_SCHTASKS_BIN: process.execPath,
+      CODEX_ROUTER_SCHTASKS_ARGS_JSON: JSON.stringify([schtasks]),
+      CODEX_ROUTER_TASK_STATE_BIN: process.execPath,
+      CODEX_ROUTER_TASK_STATE_ARGS_JSON: JSON.stringify([taskState]),
+    };
+    runService("service-windows.mjs", "win32", ["snapshot", windowsSnapshot], windowsEnv);
+    writeFileSync(wrapper, "new wrapper\n");
+    writeFileSync(launcher, "new launcher\n");
+    writeFileSync(taskXml, "<Task>new</Task>\n");
+    writeFileSync(managerState, "ready\n");
+    runService("service-windows.mjs", "win32", ["restore", windowsSnapshot], windowsEnv);
+    assert.equal(readFileSync(wrapper, "utf8"), "old wrapper\n");
+    assert.equal(readFileSync(launcher, "utf8"), "old launcher\n");
+    assert.equal(readFileSync(taskXml, "utf8"), "<Task>old</Task>\n");
+    assert.equal(readFileSync(managerState, "utf8"), "running\n");
   } finally {
     rmSync(testRoot, { recursive: true, force: true });
   }

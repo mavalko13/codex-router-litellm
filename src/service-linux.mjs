@@ -4,7 +4,9 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -24,8 +26,20 @@ import {
 const effectivePlatform = process.env.CODEX_ROUTER_SERVICE_PLATFORM || process.platform;
 const command = process.argv[2] || "status";
 const nodeBinary = process.env.CODEX_ROUTER_NODE_BIN || process.execPath;
+const systemctlBinary = process.env.CODEX_ROUTER_SYSTEMCTL_BIN || "systemctl";
+const systemctlPrefixArgs = (() => {
+  if (!process.env.CODEX_ROUTER_SYSTEMCTL_ARGS_JSON) return [];
+  const parsed = JSON.parse(process.env.CODEX_ROUTER_SYSTEMCTL_ARGS_JSON);
+  if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== "string")) {
+    throw new Error("CODEX_ROUTER_SYSTEMCTL_ARGS_JSON must be a JSON string array.");
+  }
+  return parsed;
+})();
 if (!path.isAbsolute(nodeBinary)) {
   throw new Error("CODEX_ROUTER_NODE_BIN must be an absolute path.");
+}
+if (process.env.CODEX_ROUTER_SYSTEMCTL_BIN && !path.isAbsolute(systemctlBinary)) {
+  throw new Error("CODEX_ROUTER_SYSTEMCTL_BIN must be an absolute path.");
 }
 const unitName = "codex-router.service";
 const unitPath = path.join(
@@ -97,7 +111,7 @@ WantedBy=default.target
 }
 
 function systemctl(args, options = {}) {
-  return execFileSync("systemctl", ["--user", ...args], {
+  return execFileSync(systemctlBinary, [...systemctlPrefixArgs, "--user", ...args], {
     encoding: "utf8",
     stdio: options.quiet ? ["ignore", "ignore", "ignore"] : ["ignore", "pipe", "pipe"],
   });
@@ -112,13 +126,108 @@ function writeUnit() {
   renameSync(temporary, unitPath);
 }
 
-if (!new Set(["install", "uninstall", "start", "stop", "restart", "status", "render"]).has(command)) {
-  console.error("Usage: service-linux.mjs install|uninstall|start|stop|restart|status|render");
+function snapshotPath() {
+  const target = process.argv[3];
+  if (!target || !path.isAbsolute(target)) {
+    throw new Error(`${command} requires an absolute snapshot path.`);
+  }
+  return target;
+}
+
+function unitSnapshot() {
+  if (!existsSync(unitPath)) return { present: false };
+  return {
+    present: true,
+    contents: readFileSync(unitPath).toString("base64"),
+    mode: statSync(unitPath).mode & 0o777,
+  };
+}
+
+function serviceIsActive() {
+  try {
+    return systemctl(["is-active", unitName]).trim() === "active";
+  } catch {
+    return false;
+  }
+}
+
+function serviceIsEnabled() {
+  try {
+    return systemctl(["is-enabled", unitName]).trim() === "enabled";
+  } catch {
+    return false;
+  }
+}
+
+function restoreUnit(definition) {
+  if (!definition?.present) {
+    if (existsSync(unitPath)) unlinkSync(unitPath);
+    return;
+  }
+  mkdirSync(path.dirname(unitPath), { recursive: true, mode: 0o700 });
+  const temporary = `${unitPath}.restore.${process.pid}`;
+  writeFileSync(temporary, Buffer.from(definition.contents, "base64"), {
+    mode: definition.mode,
+  });
+  chmodSync(temporary, definition.mode);
+  renameSync(temporary, unitPath);
+}
+
+function writeServiceSnapshot(target) {
+  const definition = unitSnapshot();
+  const running = serviceIsActive();
+  if (running && !definition.present) {
+    throw new Error("Cannot snapshot an active systemd service without its unit definition.");
+  }
+  const snapshot = {
+    version: 1,
+    platform: "linux",
+    definition,
+    enabled: serviceIsEnabled(),
+    running,
+  };
+  writeFileSync(target, `${JSON.stringify(snapshot, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  chmodSync(target, 0o600);
+}
+
+function restoreServiceSnapshot(target) {
+  const snapshot = JSON.parse(readFileSync(target, "utf8"));
+  if (snapshot?.version !== 1 || snapshot.platform !== "linux") {
+    throw new Error(`Invalid systemd service snapshot: ${target}`);
+  }
+  try {
+    systemctl(["disable", "--now", unitName], { quiet: true });
+  } catch {
+    // A partially installed or already missing unit is still replaceable.
+  }
+  restoreUnit(snapshot.definition);
+  systemctl(["daemon-reload"], { quiet: true });
+  if (!snapshot.definition?.present) return;
+  if (snapshot.enabled) systemctl(["enable", unitName], { quiet: true });
+  else {
+    try {
+      systemctl(["disable", unitName], { quiet: true });
+    } catch {
+      // A disabled unit is already the requested state.
+    }
+  }
+  if (snapshot.running) systemctl(["start", unitName], { quiet: true });
+}
+
+if (!new Set(["install", "uninstall", "start", "stop", "restart", "status", "render", "snapshot", "restore"]).has(command)) {
+  console.error("Usage: service-linux.mjs install|uninstall|start|stop|restart|status|render|snapshot|restore");
   process.exit(2);
 }
 
 if (command === "render") {
   process.stdout.write(unit());
+} else if (command === "snapshot") {
+  writeServiceSnapshot(snapshotPath());
+} else if (command === "restore") {
+  restoreServiceSnapshot(snapshotPath());
 } else if (command === "install") {
   writeUnit();
   systemctl(["daemon-reload"], { quiet: true });

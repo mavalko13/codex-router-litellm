@@ -14,9 +14,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // coverage of any kind.
 const savedArgv = [...process.argv];
 process.argv = [process.argv[0], "curate-models.mjs", "gemini-api"];
-const { parseEfforts, parseRequestProfile, planCuration, renderRows } = await import(
+const { applyApiSurfaceUpdates, modelSelectionOption, parseApiSurface, parseEfforts, parseRequestProfile, planCuration, renderRows } = await import(
   "../src/curate-models.mjs"
 );
+const { trustedApiSurfaceForUpstream } = await import("../src/api-surface.mjs");
 process.argv = savedArgv;
 process.exitCode = 0;
 
@@ -175,6 +176,66 @@ test("an empty request profile leaves the model without one", () => {
 
 test("request profile whitespace and casing are tolerated", () => {
   assert.equal(parseRequestProfile(" Auto-Tool-Choice "), "auto-tool-choice");
+});
+
+test("manual curation validates explicit API surfaces", () => {
+  assert.equal(parseApiSurface(" Responses "), "responses");
+  assert.equal(parseApiSurface("CHAT-COMPLETIONS"), "chat-completions");
+  assert.throws(() => parseApiSurface("completions"), /Unknown API surface/);
+});
+
+test("manual curation accepts a positional model id", () => {
+  assert.equal(
+    modelSelectionOption(["node", "curate-models.mjs", "example-litellm", "model-a", "--no-apply"]),
+    "model-a",
+  );
+  assert.equal(
+    modelSelectionOption(["node", "curate-models.mjs", "example-litellm", "--models", "model-b"]),
+    "model-b",
+  );
+});
+
+test("trusted mixed-provider aliases infer the correct API surface", () => {
+  const provider = {
+    id: "example-litellm",
+    defaultApiSurface: "chat-completions",
+    apiSurfaceOverrides: [
+      { prefix: "codex-gpt-", apiSurface: "responses" },
+      { prefix: "gpt-", apiSurface: "responses" },
+      { prefix: "o4-", apiSurface: "responses" },
+    ],
+  };
+  assert.equal(trustedApiSurfaceForUpstream(provider, "codex-gpt-5.6-sol"), "responses");
+  assert.equal(trustedApiSurfaceForUpstream(provider, "gpt-5.6"), "responses");
+  assert.equal(trustedApiSurfaceForUpstream(provider, "o4-mini"), "responses");
+  assert.equal(trustedApiSurfaceForUpstream(provider, "ollama-cloud-qwen3"), "chat-completions");
+  assert.equal(trustedApiSurfaceForUpstream(provider, "glm-5.2"), "chat-completions");
+  assert.equal(trustedApiSurfaceForUpstream(provider, "unknown-model"), "chat-completions");
+});
+
+test("manual surface updates preserve auto-curated metadata", () => {
+  const existing = curated("model-a", {
+    autoCurated: true,
+    apiSurface: "chat-completions",
+    displayName: "Operator label",
+    contextWindow: 262144,
+  });
+  const result = applyApiSurfaceUpdates([existing], ["model-a"], "responses");
+  assert.deepEqual(result.blocked, []);
+  assert.deepEqual(result.updated, ["model-a"]);
+  assert.deepEqual(result.models, [{ ...existing, apiSurface: "responses" }]);
+});
+
+test("manual surface updates reject ordinary hand-curated entries", () => {
+  const existing = curated("model-a", { displayName: "Hand curated" });
+  const result = applyApiSurfaceUpdates([existing], ["model-a"], "responses");
+  assert.deepEqual(result.models, [existing]);
+  assert.deepEqual(result.blocked, ["model-a"]);
+});
+
+test("manual curation persists its resolved API surface", () => {
+  const source = readFileSync(path.join(root, "src", "curate-models.mjs"), "utf8");
+  assert.match(source, /apiSurface:\s*apiSurfaceFor\(id\)/);
 });
 
 test("the picker marks selection and existing curation separately", () => {

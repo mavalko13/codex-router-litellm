@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -23,6 +25,29 @@ const renderCommands = new Set(["render", "render-launcher", "render-task"]);
 const taskName = "Codex Router";
 const wrapperPath = path.join(STATE_DIR, "start-codex-router.cmd");
 const launcherPath = path.join(STATE_DIR, "start-codex-router-hidden.vbs");
+const schtasksBinary = process.env.CODEX_ROUTER_SCHTASKS_BIN || "schtasks.exe";
+const schtasksPrefixArgs = process.env.CODEX_ROUTER_SCHTASKS_ARGS_JSON
+  ? JSON.parse(process.env.CODEX_ROUTER_SCHTASKS_ARGS_JSON)
+  : [];
+const taskStateBinary = process.env.CODEX_ROUTER_TASK_STATE_BIN;
+const taskStatePrefixArgs = process.env.CODEX_ROUTER_TASK_STATE_ARGS_JSON
+  ? JSON.parse(process.env.CODEX_ROUTER_TASK_STATE_ARGS_JSON)
+  : [];
+
+for (const [name, value] of [
+  ["CODEX_ROUTER_SCHTASKS_ARGS_JSON", schtasksPrefixArgs],
+  ["CODEX_ROUTER_TASK_STATE_ARGS_JSON", taskStatePrefixArgs],
+]) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${name} must be a JSON string array.`);
+  }
+}
+for (const [name, value] of [
+  ["CODEX_ROUTER_SCHTASKS_BIN", process.env.CODEX_ROUTER_SCHTASKS_BIN],
+  ["CODEX_ROUTER_TASK_STATE_BIN", taskStateBinary],
+]) {
+  if (value && !path.isAbsolute(value)) throw new Error(`${name} must be an absolute path.`);
+}
 
 if (effectivePlatform !== "win32" && !renderCommands.has(command)) {
   throw new Error("The Task Scheduler service manager runs on Windows only.");
@@ -63,7 +88,7 @@ function wrapper() {
   };
   return `@echo off\r\n${Object.entries(variables)
     .map(([key, value]) => `set "${key}=${cmdEscape(value)}"`)
-    .join("\r\n")}\r\n"${cmdEscape(process.execPath)}" "${cmdEscape(start)}" >> "${cmdEscape(LOG_PATH)}" 2>&1\r\n`;
+    .join("\r\n")}\r\n:router_restart\r\n"${cmdEscape(process.execPath)}" "${cmdEscape(start)}" >> "${cmdEscape(LOG_PATH)}" 2>&1\r\nset "router_status=%ERRORLEVEL%"\r\nif "%router_status%"=="75" goto router_restart\r\nexit /b %router_status%\r\n`;
 }
 
 // The scheduled task launches this script through `wscript.exe //B //NoLogo`,
@@ -99,8 +124,8 @@ function launcher() {
 }
 
 function schtasks(args, options = {}) {
-  return execFileSync("schtasks.exe", args, {
-    encoding: "utf8",
+  return execFileSync(schtasksBinary, [...schtasksPrefixArgs, ...args], {
+    encoding: options.encoding === null ? null : "utf8",
     stdio: options.quiet ? ["ignore", "ignore", "ignore"] : ["ignore", "pipe", "pipe"],
   });
 }
@@ -238,11 +263,14 @@ function taskExists() {
 function taskState() {
   const script =
     "try { [Console]::Out.Write((Get-ScheduledTask -TaskName $env:CODEX_ROUTER_TASK).State.ToString()) } catch { exit 1 }";
-  for (const executable of ["powershell.exe", "pwsh.exe"]) {
+  const candidates = taskStateBinary
+    ? [[taskStateBinary, taskStatePrefixArgs]]
+    : [["powershell.exe", []], ["pwsh.exe", []]];
+  for (const [executable, prefixArgs] of candidates) {
     try {
       return execFileSync(
         executable,
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        [...prefixArgs, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
         {
           encoding: "utf8",
           env: { ...process.env, CODEX_ROUTER_TASK: taskName },
@@ -257,6 +285,84 @@ function taskState() {
   return undefined;
 }
 
+function snapshotPath() {
+  const target = process.argv[3];
+  if (!target || !path.isAbsolute(target)) {
+    throw new Error(`${command} requires an absolute snapshot path.`);
+  }
+  return target;
+}
+
+function fileSnapshot(target) {
+  return existsSync(target)
+    ? { present: true, contents: readFileSync(target).toString("base64") }
+    : { present: false };
+}
+
+function restoreFile(target, snapshot) {
+  if (!snapshot?.present) {
+    if (existsSync(target)) unlinkSync(target);
+    return;
+  }
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeAtomic(target, Buffer.from(snapshot.contents, "base64"));
+}
+
+function exportedTaskXml() {
+  if (!taskExists()) return undefined;
+  return schtasks(["/Query", "/TN", taskName, "/XML"], { encoding: null });
+}
+
+function writeServiceSnapshot(target) {
+  const xml = exportedTaskXml();
+  const state = xml ? taskState() : undefined;
+  if (xml && !state) {
+    throw new Error("Unable to determine the running state of the existing scheduled task.");
+  }
+  const snapshot = {
+    version: 1,
+    platform: "win32",
+    task: xml
+      ? { present: true, xml: xml.toString("base64"), running: state === "running" }
+      : { present: false, running: false },
+    wrapper: fileSnapshot(wrapperPath),
+    launcher: fileSnapshot(launcherPath),
+  };
+  writeFileSync(target, `${JSON.stringify(snapshot, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  chmodSync(target, 0o600);
+}
+
+function restoreServiceSnapshot(target) {
+  const snapshot = JSON.parse(readFileSync(target, "utf8"));
+  if (snapshot?.version !== 1 || snapshot.platform !== "win32") {
+    throw new Error(`Invalid Task Scheduler service snapshot: ${target}`);
+  }
+  endTask();
+  try {
+    schtasks(["/Delete", "/TN", taskName, "/F"], { quiet: true });
+  } catch {
+    // A missing or half-created task is already removed.
+  }
+  restoreFile(wrapperPath, snapshot.wrapper);
+  restoreFile(launcherPath, snapshot.launcher);
+  if (!snapshot.task?.present) return;
+  const xmlPath = `${target}.task.xml`;
+  try {
+    writeFileSync(xmlPath, Buffer.from(snapshot.task.xml, "base64"));
+    schtasks(["/Create", "/TN", taskName, "/XML", xmlPath, "/F"], { quiet: true });
+  } finally {
+    try {
+      if (existsSync(xmlPath)) unlinkSync(xmlPath);
+    } catch {
+      // The transaction snapshot remains private even if temp cleanup fails.
+    }
+  }
+  if (snapshot.task.running) schtasks(["/Run", "/TN", taskName], { quiet: true });
+}
+
 if (
   !new Set([
     "install",
@@ -268,10 +374,12 @@ if (
     "render",
     "render-launcher",
     "render-task",
+    "snapshot",
+    "restore",
   ]).has(command)
 ) {
   console.error(
-    "Usage: service-windows.mjs install|uninstall|start|stop|restart|status|render|render-launcher|render-task",
+    "Usage: service-windows.mjs install|uninstall|start|stop|restart|status|render|render-launcher|render-task|snapshot|restore",
   );
   process.exit(2);
 }
@@ -282,6 +390,10 @@ if (command === "render") {
   process.stdout.write(launcher());
 } else if (command === "render-task") {
   process.stdout.write(`${JSON.stringify(taskAction())}\n`);
+} else if (command === "snapshot") {
+  writeServiceSnapshot(snapshotPath());
+} else if (command === "restore") {
+  restoreServiceSnapshot(snapshotPath());
 } else if (command === "install") {
   try {
     // Writing the launchers belongs inside the try: renameSync over the .vbs

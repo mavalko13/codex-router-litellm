@@ -34,10 +34,13 @@ export function modelIds(payload, provider) {
   return [...new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean))].sort();
 }
 
-async function providerPayload(provider) {
+async function providerPayload(provider, options = {}) {
+  const { timeoutMs = 30_000 } = options;
   const fixture = option("--fixture");
   if (fixture) return JSON.parse(readFileSync(path.resolve(fixture), "utf8"));
-  const credential = resolveProviderCredential(provider);
+  const credential = resolveProviderCredential(provider, {
+    persistent: options.persistentCredential === true,
+  });
   if (!credential) throw new Error(credentialStatus(provider).setup);
   let baseUrl = resolveProviderBaseUrl(provider);
   let headers = provider.protocol === "anthropic"
@@ -50,24 +53,29 @@ async function providerPayload(provider) {
       ...githubCopilotCatalogHeaders(session.token),
     };
   }
-  const response = await fetch(`${baseUrl}/models`, {
+  const fetchImpl = options.fetchImpl || fetch;
+  const response = await fetchImpl(`${baseUrl}/models`, {
     headers,
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error?.message || `Provider model discovery returned HTTP ${response.status}.`);
+    // Provider error bodies are untrusted and sometimes contain masked key
+    // identifiers, account details, or echoed request data. Discovery only
+    // needs the status; never promote the upstream body into terminal/service
+    // logs.
+    throw new Error(`Provider model discovery returned HTTP ${response.status}.`);
   }
   return payload;
 }
 
-export async function discoverProviderModels(providerId) {
+export async function discoverProviderModels(providerId, options = {}) {
   const provider = PROVIDERS.get(providerId);
   if (!provider) throw new Error(`Unknown provider: ${providerId}`);
   if (provider.kind !== "openai-compatible") {
     throw new Error(`${provider.displayName} does not expose a supported model-list endpoint.`);
   }
-  const discovered = modelIds(await providerPayload(provider), provider);
+  const discovered = modelIds(await providerPayload(provider, options), provider);
   const registered = MODELS
     .filter((model) => model.provider === providerId)
     .map((model) => model.upstreamModel)

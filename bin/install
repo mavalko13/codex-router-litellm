@@ -8,12 +8,6 @@ adopt_native_catalog=false
 force_deps=false
 target=${MODEL_ROUTER_TARGET:-codex}
 
-# Installing is the sanctioned way for a checkout to take over a state
-# directory: generated files are rebuilt here and the new owner is recorded at
-# the end, so the ownership guard must not block this run.
-MODEL_ROUTER_ALLOW_FOREIGN_STATE=1
-export MODEL_ROUTER_ALLOW_FOREIGN_STATE
-
 case "$target" in
   codex) ;;
   *) echo "MODEL_ROUTER_TARGET must be codex." >&2; exit 2 ;;
@@ -118,48 +112,25 @@ else
   node src/install-plan.mjs record python-deps
 fi
 
-node src/secret.mjs ensure
-config_enabled=false
-service_installed=false
-config_manager=src/config-manager.mjs
-rollback() {
-  if [ "$service_installed" = true ]; then
-    node src/service.mjs uninstall >/dev/null 2>&1 || true
-  fi
-  if [ "$config_enabled" = true ]; then
-    node "$config_manager" disable >/dev/null 2>&1 || true
-  elif [ "$adopt_native_catalog" = true ]; then
-    node src/native-catalog-source.mjs clear-pending >/dev/null 2>&1 || true
-  fi
-}
-trap rollback EXIT HUP INT TERM
-
-if [ "$adopt_native_catalog" = true ]; then
-  node src/native-catalog-source.mjs prepare-from-config >/dev/null
-fi
-state_dir=${MODEL_ROUTER_STATE_DIR:-${CODEX_ROUTER_STATE_DIR:-${KIMI_CODEX_STATE_DIR:-${CODEX_HOME:-$HOME/.codex}/codex-router}}}
-if [ -s "$state_dir/native-models.json" ]; then
-  node src/catalog.mjs
-else
-  node src/catalog.mjs --refresh-native --bundled-native
-fi
-node src/litellm-config.mjs
-
 if [ "$prepare_only" = true ]; then
+  # The shared helper enforces the owner guard before its first state write.
+  # A foreign checkout may prepare private dependencies, but it cannot use
+  # --prepare-only to rewrite the files consumed by the live service.
+  node src/install-transaction.mjs prepare
   echo "Dependencies and local Codex router files are prepared. Application configuration was not changed."
   exit 0
 fi
 
-config_enabled=true
+# POSIX and Windows use the same critical transaction. It snapshots the prior
+# manifest, exact Codex config, generated runtime state, and platform service;
+# records the new owner before starting the new service; and restores the old
+# definition/running state on any failure.
+set -- apply
 if [ "$adopt_native_catalog" = true ]; then
-  node "$config_manager" enable --adopt-native-catalog
-else
-  node "$config_manager" enable
+  set -- "$@" --adopt-native-catalog
 fi
-service_installed=true
-node src/service.mjs install
-node src/wait-health.mjs
-node src/install-manifest.mjs record >/dev/null
+node src/install-transaction.mjs "$@"
+
 # Adopt an already-built companion into launchd's care. Installs that never
 # added the tray skip this; the point is that anyone who has one ends up
 # supervised without having to know the agent exists.
@@ -189,10 +160,6 @@ case "$tray_plan" in
     echo "Menu-bar companion already matches its sources; skipping the tray build."
     ;;
 esac
-config_enabled=false
-service_installed=false
-trap - EXIT HUP INT TERM
-
 # The skill pack teaches custom routed models how to use the app's native
 # tools. Best effort: a skill install failure must never roll the router back.
 node src/skills-install.mjs install

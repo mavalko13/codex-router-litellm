@@ -84,14 +84,20 @@ test("rotation runs while the service is stopped, never from inside it", () => {
 
   const macos = readFileSync(path.join(root, "src", "service-macos.mjs"), "utf8");
   assert.match(macos, /rotateLog\(LOG_PATH\)/);
+  // Snapshot restoration also stops and bootstraps a service, so compare the
+  // statements inside the install branch rather than unrelated earlier calls.
+  const macosInstall = macos.slice(
+    macos.indexOf('command === "install"'),
+    macos.indexOf('command === "uninstall"'),
+  );
   // Ordering is the whole fix: rotating before the old process is gone
   // reintroduces the open-descriptor bug.
   assert.ok(
-    macos.indexOf("bootout();") < macos.indexOf("rotateLog(LOG_PATH)"),
+    macosInstall.indexOf("bootout();") < macosInstall.indexOf("rotateLog(LOG_PATH)"),
     "macOS must stop the service before rotating",
   );
   assert.ok(
-    macos.indexOf("rotateLog(LOG_PATH)") < macos.indexOf("bootstrap();"),
+    macosInstall.indexOf("rotateLog(LOG_PATH)") < macosInstall.indexOf("bootstrap();"),
     "macOS must rotate before starting the service again",
   );
 

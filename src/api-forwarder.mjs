@@ -1,6 +1,12 @@
 import http from "node:http";
 
 import {
+  API_SURFACE_RESPONSES,
+  apiRouteForSurface,
+  effectiveApiSurface,
+} from "./api-surface.mjs";
+
+import {
   HOP_BY_HOP_HEADERS,
   httpErrorStatus,
   pipeResponse,
@@ -307,12 +313,8 @@ function normalizeBody(buffer, contentType, route) {
     error.status = 400;
     throw error;
   }
-  const expectedRoute =
-    provider.protocol === "anthropic"
-      ? "/messages"
-      : provider.protocol === "openai-responses"
-        ? "/responses"
-        : "/chat/completions";
+  const apiSurface = effectiveApiSurface(model, provider);
+  const expectedRoute = apiRouteForSurface(apiSurface);
   if (route !== expectedRoute) {
     const error = new Error(`Model ${model.gatewayModel} does not support ${route}.`);
     error.status = 400;
@@ -360,7 +362,7 @@ function normalizeBody(buffer, contentType, route) {
   // the bridge lives. Say that in the model's own turn instead of dropping the
   // part or letting the provider refuse the whole conversation.
   if (!supportsImageInput(model)) {
-    const textPartType = provider.protocol === "openai-responses" ? "input_text" : "text";
+    const textPartType = apiSurface === API_SURFACE_RESPONSES ? "input_text" : "text";
     const reason =
       `${model.displayName || model.gatewayModel} cannot read images, and an image sent ` +
       "straight to the gateway skips the router's vision bridge";
@@ -372,7 +374,7 @@ function normalizeBody(buffer, contentType, route) {
       // Never quieted: content the caller sent has been replaced, and an
       // unattended service is exactly where that must not happen in silence.
       console.error(
-        `[api-forwarder] model=${model.gatewayModel} stripped=${stripped.images} ` +
+        `[api-forwarder] model=${JSON.stringify(model.gatewayModel)} stripped=${stripped.images} ` +
           "image part(s) that bypassed the vision bridge",
       );
     }
@@ -681,7 +683,9 @@ async function handleRequest(request, response) {
   if (rateLimit) recordRateLimitSnapshot(canonicalProviderId(normalized.provider.id), rateLimit);
   if (!QUIET) {
     console.error(
-      `[api-forwarder] provider=${normalized.provider.id} model=${normalized.model.upstreamModel} status=${upstream.status} duration_ms=${Date.now() - startedAt}`,
+      `[api-forwarder] provider=${JSON.stringify(normalized.provider.id)} ` +
+        `model=${JSON.stringify(normalized.model.upstreamModel)} status=${upstream.status} ` +
+        `duration_ms=${Date.now() - startedAt}`,
     );
   }
 }
