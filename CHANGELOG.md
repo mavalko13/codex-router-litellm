@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Reinstalling on Windows no longer leaves the previous router running as an
+  orphan.** Task Scheduler ended the hidden `wscript.exe` action but left its
+  `cmd.exe` and `node.exe` descendants alive. The replacement then lost its
+  ports, while health checks accidentally accepted the old process and doctor
+  reported the task as `Ready`. Reinstall and restart now terminate only the
+  process tree whose command line points at this checkout's `src/start.mjs`,
+  wait for it to disappear, replace the launchers, and propagate any real
+  registration failure instead of claiming success.
+
+- **Windows service-only pull requests no longer rebuild every desktop target.**
+  Required check names remain intact for branch protection, but macOS, Linux,
+  and desktop jobs finish as explicit no-ops while the Windows job runs the
+  service, installer, syntax, and PowerShell parser regressions. Broader source
+  changes continue to run the complete cross-platform matrix.
+
 - **A successful Windows checkout recovery is no longer reported as an
   installation failure.** Git writes branch-switch confirmations to stderr;
   Windows PowerShell 5.1 converted the redirected confirmation into a
