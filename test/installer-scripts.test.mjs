@@ -156,7 +156,21 @@ test("both installers keep the update when setup reports exit 2", () => {
   // The rollback must stay reachable for every other non-zero status, so an
   // unrecognized failure still restores the previous revision.
   assert.match(posix, /switch --detach "\$previous_revision"/);
-  assert.match(windows, /switch --detach \$PreviousRevision/);
+  assert.match(windows, /switch --quiet --detach \$PreviousRevision/);
+});
+
+test("Windows bootstrap does not turn successful Git switch notices into errors", () => {
+  const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
+  const switchCommands = windows
+    .split(/\r?\n/)
+    .filter((line) => /& git -C .* switch /.test(line));
+
+  assert.equal(switchCommands.length, 3);
+  for (const command of switchCommands) {
+    assert.match(command, /switch --quiet /);
+    assert.doesNotMatch(command, /2>\$null/);
+  }
+  assert.match(windows, /switch --quiet main\s+if \(\$LASTEXITCODE -ne 0\)/);
 });
 
 test("Windows bootstraps runtime dependencies before importing setup", () => {

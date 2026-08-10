@@ -205,7 +205,12 @@ if (-not $CheckoutInstall) {
       $Branch = [string]$Branch.Trim()
       if ($Branch -ne "main") {
         if (-not $Branch) {
-          & git -C $InstallDir switch main 2>$null
+          # Git writes a successful branch-switch notice to stderr. Redirecting
+          # native stderr under Windows PowerShell 5.1 turns that notice into a
+          # terminating NativeCommandError while $ErrorActionPreference is Stop.
+          # --quiet suppresses success chatter without hiding a real failure;
+          # $LASTEXITCODE remains the source of truth below.
+          & git -C $InstallDir switch --quiet main
           if ($LASTEXITCODE -ne 0) {
             throw "$InstallDir is in a detached HEAD state and could not be restored to main; run 'git switch main' there and retry."
           }
@@ -244,7 +249,7 @@ if (-not $CheckoutInstall) {
     }
   } catch {
     if ($PreviousRevision) {
-      & git -C $Repository switch --detach $PreviousRevision 2>$null | Out-Null
+      & git -C $Repository switch --quiet --detach $PreviousRevision | Out-Null
       Write-Warning "Dependency bootstrap failed; the managed source checkout was restored to $PreviousRevision."
     }
     throw
@@ -275,7 +280,7 @@ if (-not $CheckoutInstall) {
   if ($SetupExitCode -eq 2) {
     Write-Warning "Setup did not finish configuring; the update was kept. Re-run setup to continue, or ./codex-router.ps1 rollback to return to the previous revision."
   } elseif ($SetupExitCode -ne 0 -and $PreviousRevision) {
-    & git -C $Repository switch --detach $PreviousRevision 2>$null | Out-Null
+    & git -C $Repository switch --quiet --detach $PreviousRevision | Out-Null
     Write-Warning "Setup failed; the managed source checkout was restored to $PreviousRevision."
   }
   exit $SetupExitCode
