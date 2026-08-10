@@ -39,4 +39,37 @@ test("both LiteLLM guides keep the same operator commands and safety contract", 
   assert.match(russian, /master key/i);
   assert.match(english, /separate private repository/i);
   assert.match(russian, /отдельном\s+приватном\s+репозитории/i);
+  for (const guide of [english, russian]) {
+    assert.match(guide, /-Providers litellm-gateway/);
+    assert.match(guide, /ExecutionPolicy Bypass/);
+    assert.match(guide, /\.\\model-router\.cmd codex doctor/);
+  }
+});
+
+test("Windows docs use the policy-safe wrapper and the unified ChatGPT process", () => {
+  const install = read("docs", "INSTALL.md");
+  const troubleshooting = read("docs", "TROUBLESHOOTING.md");
+  assert.doesNotMatch(install, /\.\/model-router\.ps1|\.\/codex-router\.ps1/);
+  assert.match(install, /\.\\model-router\.cmd codex doctor|model-router\.cmd/);
+  assert.match(install, /Git\.Git/);
+  assert.match(install, /OpenJS\.NodeJS\.LTS/);
+  assert.match(install, /astral-sh\.uv/);
+  assert.match(troubleshooting, /Get-Process ChatGPT/);
+  assert.doesNotMatch(troubleshooting, /Get-Process Codex/);
+});
+
+test("quick install selects LiteLLM while keeping endpoint entry interactive", () => {
+  const english = read("README.md");
+  const russian = read("README.ru.md");
+  const install = read("docs", "INSTALL.md");
+  const changelog = read("CHANGELOG.md");
+
+  for (const document of [english, russian]) {
+    assert.match(document, /--providers litellm-gateway/);
+    assert.match(document, /-Providers litellm-gateway/);
+    assert.match(document, /URL/);
+  }
+  assert.match(install, /do not supply an endpoint or\s+credential/);
+  assert.match(install, /advanced chooser/);
+  assert.match(changelog, /quick-install path no longer opens the full provider catalog/);
 });

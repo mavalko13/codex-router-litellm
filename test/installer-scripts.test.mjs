@@ -171,6 +171,38 @@ test("Windows bootstraps runtime dependencies before importing setup", () => {
   assert.match(outer, /Dependency bootstrap failed; the managed source checkout was restored/);
 });
 
+test("guided Windows bootstrap offers exact prerequisites without silent installs", () => {
+  const windows = readScript("install.ps1");
+  const outer = windows.slice(0, windows.indexOf('if (-not (Test-RouterCheckout $ScriptDirectory))'));
+
+  assert.match(outer, /Confirm-PackageInstall/);
+  assert.match(outer, /if \(-not \$UseGuided\) \{ return \$false \}/);
+  assert.match(outer, /Read-Host "\$DisplayName is required\. Install it with WinGet now\? \[Y\/n\]"/);
+  for (const id of ["Git.Git", "OpenJS.NodeJS.LTS", "astral-sh.uv"]) {
+    assert.match(outer, new RegExp(id.replaceAll(".", "\\.")));
+  }
+  assert.match(outer, /--accept-source-agreements/);
+  assert.match(outer, /--accept-package-agreements/);
+  assert.match(outer, /Update-ProcessPath/);
+});
+
+test("Windows installs the skill pack only after the shared transaction commits", () => {
+  const windows = readScript("install.ps1");
+  const transaction = windows.indexOf("src\\install-transaction.mjs");
+  const skills = windows.indexOf("src\\skills-install.mjs install");
+  assert.notEqual(transaction, -1, "install.ps1 must run the shared transaction");
+  assert.notEqual(skills, -1, "install.ps1 must install the skill pack");
+  assert.ok(transaction < skills, "skills must not participate in router rollback");
+  assert.match(windows, /The router is installed, but the Codex skill pack could not be refreshed/);
+});
+
+test("Windows cmd wrapper bypasses only the checked-in PowerShell entrypoint", () => {
+  const wrapper = readScript("model-router.cmd");
+  assert.match(wrapper, /powershell\.exe -NoLogo -NoProfile -ExecutionPolicy Bypass/);
+  assert.match(wrapper, /"%~dp0model-router\.ps1" %\*/);
+  assert.match(wrapper, /exit \/b %ERRORLEVEL%/);
+});
+
 test("the kept-update message names the way back", () => {
   // Keeping the update on exit 2 is the right default, but a user who wanted
   // the old revision needs to be told the escape hatch exists; the retained

@@ -36,7 +36,7 @@ macOS или Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh \
-  | sh -s -- --target codex --guided
+  | sh -s -- --target codex --guided --providers litellm-gateway
 ```
 
 Windows PowerShell:
@@ -44,7 +44,7 @@ Windows PowerShell:
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
 Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.ps1 -OutFile $installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
 
 Требования:
@@ -54,9 +54,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex
 - `uv` либо Python 3.10+ с `venv`;
 - Git для managed checkout, обновления и rollback.
 
-В guided setup выберите **Your LiteLLM Gateway**. Установщик сначала спросит
-OpenAI-compatible URL, затем virtual key через скрытый prompt. Платный smoke
-test запускается только при явном согласии.
+В Windows guided setup проверяет Git, Node.js и `uv`/Python до изменения
+Codex. Если чего-то не хватает, он предлагает установить точный пакет через
+WinGet и продолжает в том же PowerShell после явного подтверждения. В режиме
+`-Auto` системные зависимости никогда не устанавливаются автоматически.
+
+Эти команды сразу выбирают только **Your LiteLLM Gateway**, поэтому общего
+списка провайдеров нет. Установщик всё равно попросит пользователя ввести свой
+OpenAI-compatible URL видимым текстом, а restricted virtual key — через
+скрытый prompt. Адрес и ключ конкретного оператора не зашиты в публичный
+установщик. Чтобы открыть полный список провайдеров в расширенном сценарии,
+уберите `--providers litellm-gateway` в macOS/Linux или
+`-Providers litellm-gateway` в Windows. Платный smoke test запускается только
+при явном согласии.
 
 После установки выберите модели:
 
@@ -69,9 +79,9 @@ test запускается только при явном согласии.
 Windows:
 
 ```powershell
-./model-router.ps1 codex discover-models litellm-gateway
-./model-router.ps1 codex curate-models litellm-gateway
-./model-router.ps1 codex doctor
+.\model-router.cmd codex discover-models litellm-gateway
+.\model-router.cmd codex curate-models litellm-gateway
+.\model-router.cmd codex doctor
 ```
 
 После изменения picker полностью закройте Codex, снова откройте его и создайте

@@ -71,11 +71,11 @@ user.
 7. On macOS/Linux, run
    `./install.sh --target codex --auto --providers IDS --migrate-known` from the
    stable checkout. On Windows, run
-   `./install.ps1 -Target codex -Auto -Providers IDS -MigrateKnown`. Omit the
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Target codex -Auto -Providers IDS -MigrateKnown`. Omit the
    migration flag when detection found nothing. Do not enable the smoke test
    unless the user agrees to a quota-consuming request.
 8. Run `bin/model-router codex doctor` (or
-   `./model-router.ps1 codex doctor` on Windows). Core config, config privacy,
+   `.\model-router.cmd codex doctor` on Windows). Core config, config privacy,
    catalog, caller capability, internal key, service, router health, and
    selected credentials must be `OK`. Unselected credentials may be `WARN`.
 9. If a managed layer fails, use `model-router codex doctor --fix`; add
@@ -83,7 +83,7 @@ user.
    the Node and Python dependencies unconditionally, unlike a normal install or
    update, which skips whichever dependency step already matches its
    fingerprint. Force that rebuild by hand with `bin/install --force-deps`
-   (`./install.ps1 -CheckoutInstall -ForceDeps`) when an environment looks
+   (`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckoutInstall -ForceDeps`) when an environment looks
    corrupted rather than merely out of date. If repair still fails, create
    `bin/support-bundle` and report its path without uploading it.
 10. Do not terminate Codex. Tell the user to fully quit it, reopen it, create a
@@ -171,7 +171,7 @@ to ship tested support to every installer.
    `./bin/curate-models PROVIDER` in an interactive terminal. When the user gave
    exact IDs and the live catalog confirms them, the deterministic form is
    `./bin/curate-models PROVIDER --models ID1,ID2 --apply`. On Windows use
-   `./model-router.ps1 codex curate-models PROVIDER` with the same arguments.
+   `.\model-router.cmd codex curate-models PROVIDER` with the same arguments.
 5. Local curation writes protected `user-models.json` state and survives router
    updates. Never edit the checked-in `config/` registry tree merely to
    satisfy one machine's

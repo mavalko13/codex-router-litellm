@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The LiteLLM quick-install path no longer opens the full provider catalog.**
+  The documented macOS, Linux, and Windows commands preselect
+  `litellm-gateway`, then interactively ask the operator for their own visible
+  OpenAI-compatible URL and hidden restricted virtual key. No endpoint or key
+  is embedded. The complete provider chooser remains available as an advanced
+  path by omitting the provider argument.
+
 - **GitHub Copilot is available as a catalog-only provider.** A
   fine-grained PAT with the Copilot Requests permission is validated through
   the Copilot account endpoint; account-selected inference hosts are restricted

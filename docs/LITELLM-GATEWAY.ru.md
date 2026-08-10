@@ -42,8 +42,12 @@ macOS или Linux:
 Windows PowerShell:
 
 ```powershell
-./install.ps1 -Target codex -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Target codex -Guided -Providers litellm-gateway
 ```
+
+Аргумент провайдера пропускает общее меню, но не передаёт endpoint. Оба
+значения оператор всё равно вводит локально. В публичном установщике нет
+зашитого URL конкретного gateway.
 
 Установщик последовательно запросит:
 
@@ -51,7 +55,9 @@ Windows PowerShell:
    `https://gateway.example/v1`. Enter принимает текущее значение. Адрес по
    умолчанию для локального LiteLLM: `http://127.0.0.1:4000/v1`.
 2. **LiteLLM virtual key** — скрытый ввод. Ключ нельзя передать аргументом
-   команды, и после ввода он не печатается.
+   команды, и после ввода он не печатается. В Windows после вставки не видно
+   ни символов, ни звёздочек: используйте правый клик, Shift+Insert или
+   Ctrl+Shift+V в Windows Terminal, затем нажмите Enter.
 
 При установке/старте router автоматически обнаруживает доступные сохранённому
 ключу модели и публикует новые ID с осторожными локальными metadata.
@@ -71,9 +77,9 @@ provider. Входной лимит становится context window Codex, a
 На Windows используются те же команды через PowerShell wrapper:
 
 ```powershell
-./model-router.ps1 codex discover-models litellm-gateway
-./model-router.ps1 codex curate-models litellm-gateway
-./model-router.ps1 codex doctor
+.\model-router.cmd codex discover-models litellm-gateway
+.\model-router.cmd codex curate-models litellm-gateway
+.\model-router.cmd codex doctor
 ```
 
 После изменения списка моделей полностью закройте и снова откройте Codex, чтобы
@@ -169,7 +175,7 @@ durable pending marker повторит его при следующем ста�
 
 Если новая версия не проходит install gates, updater возвращает предыдущую
 ревизию. Пока сохранена предыдущая ревизия, оператор также может выполнить
-`./bin/rollback` или `./codex-router.ps1 rollback` на Windows. Update и repair
+`./bin/rollback` или `.\model-router.cmd codex rollback` на Windows. Update и repair
 используют тот же transactional порядок публикации, что и installer. При
 ошибке generation, service startup или health check возвращаются предыдущие
 managed files и service definition. После успешного обновления picker полностью
