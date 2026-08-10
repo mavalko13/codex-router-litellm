@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A successful Windows checkout recovery is no longer reported as an
+  installation failure.** Git writes branch-switch confirmations to stderr;
+  Windows PowerShell 5.1 converted the redirected confirmation into a
+  terminating `NativeCommandError` even though Git returned success. Bootstrap
+  and rollback switches now suppress only Git's success chatter and continue to
+  use its exit code for real failures.
+
 - **The LiteLLM quick-install path no longer opens the full provider catalog.**
   The documented macOS, Linux, and Windows commands preselect
   `litellm-gateway`, then interactively ask the operator for their own visible
