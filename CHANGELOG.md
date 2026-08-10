@@ -15,7 +15,9 @@
   Required check names remain intact for branch protection, but macOS, Linux,
   and desktop jobs finish as explicit no-ops while the Windows job runs the
   service, installer, syntax, and PowerShell parser regressions. Broader source
-  changes continue to run the complete cross-platform matrix.
+  changes continue to run the complete cross-platform matrix. Windows test jobs
+  also have a five-minute hard timeout, and temporary process paths are
+  canonicalized before the process-tree regression runs.
 
 - **A successful Windows checkout recovery is no longer reported as an
   installation failure.** Git writes branch-switch confirmations to stderr;

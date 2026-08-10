@@ -39,6 +39,7 @@ jobs:
 
   test:
     needs: scope
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
