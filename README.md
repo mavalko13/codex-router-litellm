@@ -1,5 +1,7 @@
 # Codex Router
 
+[English](README.md) | [Русский](README.ru.md)
+
 Use Anthropic, Kimi, DeepSeek, xAI, GitHub Copilot, opencode Go, Command Code,
 and future external models inside the Codex App and CLI through one local,
 credential-isolating router.
@@ -160,6 +162,8 @@ terminal closure and is available to launchd, systemd, and Windows Task
 Scheduler. `CODEX_ROUTER_LITELLM_BASE_URL` can temporarily override it for a
 foreground command. Keep the virtual key restricted by model, budget, rate,
 and concurrency in LiteLLM; never reuse an administrator or master key.
+See the [complete LiteLLM gateway guide](docs/LITELLM-GATEWAY.md) for request
+flow, local state, security boundaries, updates, and platform verification.
 
 ### GitHub Copilot
 

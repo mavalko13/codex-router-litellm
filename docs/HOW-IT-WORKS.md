@@ -138,11 +138,18 @@ and never grants CORS access.
 | Kimi API | Discarded | Kimi Platform API key |
 | DeepSeek | Discarded | DeepSeek API key |
 | GitHub Copilot | Discarded | Stored fine-grained GitHub token, after Copilot entitlement and endpoint validation |
+| User LiteLLM gateway | Discarded | Saved per-user LiteLLM virtual key, sent only to the saved gateway URL |
 
 The Codex-to-router and internal-service trust boundaries use two different
 random keys, each stored with mode `600` or a current-user Windows ACL. Neither
 is a provider credential. Each external forwarder removes Codex account,
 installation, attestation, and private headers before sending a request upstream.
+
+The generic `litellm-gateway` provider adds a protected per-user endpoint layer.
+The API forwarder resolves an explicit environment override first, then the
+saved endpoint, then the checked-in loopback default. The provider publishes no
+models: `/models` discovery and local curation decide what each machine exposes.
+See [Connect your own LiteLLM gateway](LITELLM-GATEWAY.md).
 
 GitHub Copilot adds one more credential boundary inside the shared API
 forwarder. The stored fine-grained GitHub token is sent to GitHub's Copilot

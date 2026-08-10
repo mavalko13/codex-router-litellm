@@ -159,6 +159,24 @@ dedicated base URL. The Z.ai coding key is also distinct from general Z.ai
 platform keys; only the Coding Plan subscription key works with the coding
 endpoint.
 
+## A custom LiteLLM gateway is unreachable or empty
+
+Inspect the persistent endpoint and virtual-key status without printing the
+key:
+
+```sh
+./bin/provider-endpoint litellm-gateway status
+./bin/provider-key litellm-gateway status
+./bin/discover-models litellm-gateway
+```
+
+If the URL is wrong, run `./bin/provider-endpoint litellm-gateway set` and enter
+the OpenAI-compatible base URL, normally ending in `/v1`. If discovery works
+but the Codex picker is empty, run `./bin/curate-models litellm-gateway`, then
+fully quit and reopen Codex. See the
+[complete LiteLLM gateway guide](LITELLM-GATEWAY.md) for Windows equivalents,
+storage boundaries, and LiteLLM virtual-key restrictions.
+
 ## A provider changed its model IDs
 
 Compare the provider's official model-list endpoint with the registry:
