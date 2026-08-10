@@ -56,6 +56,18 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Guided
 ```
 
+Guided Windows setup checks Git, Node.js 22.19+, and `uv`/Python before it
+changes Codex. When one is missing and WinGet is available, it asks before
+installing the exact package (`Git.Git`, `OpenJS.NodeJS.LTS`, or
+`astral-sh.uv`), refreshes the current process PATH, and continues. It never
+installs a package manager or runtime without confirmation, and `-Auto` keeps
+missing prerequisites as a hard error.
+
+The checkout includes `model-router.cmd`, which applies a one-command
+`ExecutionPolicy Bypass` to the repository's signed-in-user PowerShell wrapper.
+Use it for later Windows commands; changing the machine or user execution
+policy is unnecessary.
+
 Clone-and-review installation is also supported:
 
 ```sh
@@ -67,7 +79,7 @@ cd codex-router
 ```powershell
 git clone https://github.com/mavalko13/codex-router-litellm.git
 Set-Location codex-router
-./install.ps1 -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Guided
 ```
 
 On macOS and Linux, guided setup also offers to build and launch the desktop
@@ -133,11 +145,11 @@ separately billed xAI API key.
 Windows:
 
 ```powershell
-./codex-router.ps1 provider-key kimi-api set
-./codex-router.ps1 provider-key deepseek set
-./codex-router.ps1 provider-key grok-api set
-./codex-router.ps1 provider-key anthropic-api set
-./codex-router.ps1 provider-key github-copilot set
+.\model-router.cmd codex provider-key kimi-api set
+.\model-router.cmd codex provider-key deepseek set
+.\model-router.cmd codex provider-key grok-api set
+.\model-router.cmd codex provider-key anthropic-api set
+.\model-router.cmd codex provider-key github-copilot set
 ```
 
 For a LiteLLM gateway you control, configure its OpenAI-compatible base URL
@@ -152,10 +164,10 @@ and a restricted virtual key before curating the models exposed to Codex:
 Windows PowerShell uses the same flow:
 
 ```powershell
-./codex-router.ps1 provider-endpoint litellm-gateway set
-./codex-router.ps1 provider-key litellm-gateway set
-./codex-router.ps1 discover-models litellm-gateway
-./codex-router.ps1 curate-models litellm-gateway
+.\model-router.cmd codex provider-endpoint litellm-gateway set
+.\model-router.cmd codex provider-key litellm-gateway set
+.\model-router.cmd codex discover-models litellm-gateway
+.\model-router.cmd codex curate-models litellm-gateway
 ```
 
 The endpoint is visible input and is stored in protected per-user router state;
@@ -261,7 +273,7 @@ another router, you can explicitly keep it as Codex Router's merge base:
 ```
 
 ```powershell
-./install.ps1 -Auto -Providers configured -AdoptNativeCatalog
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Auto -Providers configured -AdoptNativeCatalog
 ```
 
 Adoption is accepted only when the path is absolute, the JSON contains at
@@ -309,9 +321,9 @@ Live quota-consuming verification is separate:
 Windows:
 
 ```powershell
-./codex-router.ps1 update check
-./codex-router.ps1 update
-./codex-router.ps1 rollback
+.\model-router.cmd codex update check
+.\model-router.cmd codex update
+.\model-router.cmd codex rollback
 ```
 
 The updater requires the recognized GitHub origin and a checkout with no edits
@@ -323,7 +335,7 @@ only compares the revisions and changes nothing.
 Untracked files never block an update; only edits to tracked files do, and the
 refusal names them. Keep them with `git -C <checkout> stash`, or discard them by
 re-running the same command with `--force` (`./bin/update --force`,
-`./bin/rollback --force`, `./codex-router.ps1 rollback --force`). The bootstrap
+`./bin/rollback --force`, `.\model-router.cmd codex rollback --force`). The bootstrap
 installers take the same escape: `--force` for the `curl | sh` script and
 `-Force` for the `irm | iex` one. Every force path discards tracked edits only;
 none of them delete untracked files.
@@ -335,14 +347,14 @@ that was just fetched, and discarding it means the next attempt repeats the
 same failure with the same code. Rolling back there is what made a setup-path
 bug impossible to fix by updating: the fix was fetched and then thrown away.
 Any other non-zero exit still restores the previous revision. Re-run setup to
-continue, or `./bin/rollback` (`./codex-router.ps1 rollback` on Windows) to
+continue, or `./bin/rollback` (`.\model-router.cmd codex rollback` on Windows) to
 return to the retained revision deliberately.
 
 The reinstall skips dependency work whose inputs are unchanged, so an update
 that carries no `package-lock.json` or LiteLLM pin change costs a service
 restart rather than a full `npm ci` and PyPI resolution. `./bin/doctor --fix`
 rebuilds them regardless, as does `./bin/install --force-deps`
-(`./install.ps1 -CheckoutInstall -ForceDeps` on Windows).
+(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckoutInstall -ForceDeps` on Windows).
 
 For the operator-owned `litellm-gateway`, installation and startup use the
 saved restricted virtual key to discover live models automatically. New IDs
@@ -381,9 +393,9 @@ instead. Release pages provide SHA-256 checksums and provenance attestations.
 Windows:
 
 ```powershell
-./codex-router.ps1 disable
-./codex-router.ps1 enable
-./codex-router.ps1 uninstall
+.\model-router.cmd codex disable
+.\model-router.cmd codex enable
+.\model-router.cmd codex uninstall
 ```
 
 Uninstall removes the marked integration config and current background service.

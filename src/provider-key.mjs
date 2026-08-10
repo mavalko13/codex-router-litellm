@@ -16,6 +16,12 @@ import {
   targetCli,
   targetPickerName,
 } from "./target-integration.mjs";
+import {
+  powerShellStartupError,
+  WINDOWS_POWERSHELL_CANDIDATES,
+} from "./windows-powershell.mjs";
+
+export { powerShellStartupError } from "./windows-powershell.mjs";
 
 const providerId = process.argv[2];
 const command = process.argv[3] || "status";
@@ -52,20 +58,6 @@ export function windowsHiddenPromptArgs(script = WINDOWS_HIDDEN_PROMPT_SCRIPT) {
   ];
 }
 
-const WINDOWS_POWERSHELL_CANDIDATES = ["powershell.exe", "pwsh.exe"];
-
-// A candidate that is not installed explains nothing about why the prompt
-// failed, and pwsh.exe is absent on a stock Windows box. Keeping the last
-// error used to bury the real powershell.exe failure under that ENOENT.
-export function powerShellStartupError(failures) {
-  return (
-    failures.find((error) => error?.code !== "ENOENT") ||
-    new Error(
-      "PowerShell is required for hidden API-key input, but neither powershell.exe nor pwsh.exe could be started.",
-    )
-  );
-}
-
 function hiddenPrompt(label) {
   if (process.platform === "win32") {
     const args = windowsHiddenPromptArgs();
@@ -81,7 +73,10 @@ function hiddenPrompt(label) {
         failures.push(error);
       }
     }
-    throw powerShellStartupError(failures);
+    throw powerShellStartupError(
+      failures,
+      "PowerShell is required for hidden API-key input, but neither powershell.exe nor pwsh.exe could be started.",
+    );
   }
   let descriptor;
   try {
@@ -150,8 +145,8 @@ function hiddenPrompt(label) {
 function visiblePrompt(label) {
   if (process.platform === "win32") {
     const script = "[Console]::Out.Write((Read-Host $env:CODEX_ROUTER_PROMPT_LABEL))";
-    let lastError;
-    for (const executable of ["powershell.exe", "pwsh.exe"]) {
+    const failures = [];
+    for (const executable of WINDOWS_POWERSHELL_CANDIDATES) {
       try {
         return execFileSync(
           executable,
@@ -163,10 +158,10 @@ function visiblePrompt(label) {
           },
         );
       } catch (error) {
-        lastError = error;
+        failures.push(error);
       }
     }
-    throw lastError || new Error("PowerShell is required for interactive confirmation.");
+    throw powerShellStartupError(failures, "PowerShell is required for interactive confirmation.");
   }
   let descriptor;
   try {

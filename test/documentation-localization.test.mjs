@@ -39,4 +39,21 @@ test("both LiteLLM guides keep the same operator commands and safety contract", 
   assert.match(russian, /master key/i);
   assert.match(english, /separate private repository/i);
   assert.match(russian, /отдельном\s+приватном\s+репозитории/i);
+  for (const guide of [english, russian]) {
+    assert.match(guide, /-Providers litellm-gateway/);
+    assert.match(guide, /ExecutionPolicy Bypass/);
+    assert.match(guide, /\.\\model-router\.cmd codex doctor/);
+  }
+});
+
+test("Windows docs use the policy-safe wrapper and the unified ChatGPT process", () => {
+  const install = read("docs", "INSTALL.md");
+  const troubleshooting = read("docs", "TROUBLESHOOTING.md");
+  assert.doesNotMatch(install, /\.\/model-router\.ps1|\.\/codex-router\.ps1/);
+  assert.match(install, /\.\\model-router\.cmd codex doctor|model-router\.cmd/);
+  assert.match(install, /Git\.Git/);
+  assert.match(install, /OpenJS\.NodeJS\.LTS/);
+  assert.match(install, /astral-sh\.uv/);
+  assert.match(troubleshooting, /Get-Process ChatGPT/);
+  assert.doesNotMatch(troubleshooting, /Get-Process Codex/);
 });

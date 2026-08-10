@@ -54,9 +54,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex
 - `uv` либо Python 3.10+ с `venv`;
 - Git для managed checkout, обновления и rollback.
 
+В Windows guided setup проверяет Git, Node.js и `uv`/Python до изменения
+Codex. Если чего-то не хватает, он предлагает установить точный пакет через
+WinGet и продолжает в том же PowerShell после явного подтверждения. В режиме
+`-Auto` системные зависимости никогда не устанавливаются автоматически.
+
 В guided setup выберите **Your LiteLLM Gateway**. Установщик сначала спросит
 OpenAI-compatible URL, затем virtual key через скрытый prompt. Платный smoke
 test запускается только при явном согласии.
+
+Чтобы сразу перейти к полям URL и ключа без общего меню провайдеров, добавьте
+`-Providers litellm-gateway`. URL вводит сам пользователь; адрес конкретного
+оператора не зашит в публичный установщик.
 
 После установки выберите модели:
 
@@ -69,9 +78,9 @@ test запускается только при явном согласии.
 Windows:
 
 ```powershell
-./model-router.ps1 codex discover-models litellm-gateway
-./model-router.ps1 codex curate-models litellm-gateway
-./model-router.ps1 codex doctor
+.\model-router.cmd codex discover-models litellm-gateway
+.\model-router.cmd codex curate-models litellm-gateway
+.\model-router.cmd codex doctor
 ```
 
 После изменения picker полностью закройте Codex, снова откройте его и создайте

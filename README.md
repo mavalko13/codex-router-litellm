@@ -51,6 +51,11 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
 ```
 
+On Windows, guided setup checks Git, Node.js, and `uv`/Python before changing
+Codex. When a prerequisite is missing it offers to install the exact package
+through WinGet and continues in the same PowerShell process after explicit
+confirmation. Automatic setup never installs a system prerequisite.
+
 The setup selects providers, detects existing authentication, can run the
 official `kimi login`, asks for a custom LiteLLM URL with visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
@@ -60,8 +65,9 @@ Requirements:
 
 - The Codex App or CLI.
 - Node.js 22.19 or newer; Node.js 24 LTS is recommended.
-- `uv`, or Python 3.10+ with `venv`.
-- Git for the managed one-command checkout and rollback.
+- `uv`, or Python 3.10+ with `venv` (guided Windows setup can install `uv`).
+- Git for the managed one-command checkout and rollback (guided Windows setup
+  can install it).
 
 Linux installations support the Codex CLI.
 
@@ -504,7 +510,7 @@ Only enabled providers appear in the Codex picker:
 ./bin/model-router codex provider-key anthropic-api set
 ```
 
-On Windows, use `./model-router.ps1 codex` with the same commands.
+On Windows, use `.\model-router.cmd codex` with the same commands.
 
 The API-key prompt disables terminal echo. Protected files use mode `600` on
 POSIX and an inheritance-disabled, current-user ACL on Windows. Diagnostics

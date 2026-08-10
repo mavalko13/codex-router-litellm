@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // provider-key.mjs is a CLI entry that validates process.argv at module
 // evaluation time (and exits when the arguments are missing), so give it a
@@ -53,6 +56,20 @@ test("a missing PowerShell candidate never masks the real prompt failure", () =>
   const noneInstalled = powerShellStartupError([missing, missing]);
   assert.equal(noneInstalled.code, undefined);
   assert.match(noneInstalled.message, /PowerShell is required/);
+});
+
+test("every interactive Windows prompt uses shared candidate error selection", () => {
+  for (const relative of [
+    "src/setup.mjs",
+    "src/setup-shared.mjs",
+    "src/provider-endpoint.mjs",
+    "src/provider-key.mjs",
+  ]) {
+    const source = readFileSync(path.join(root, relative), "utf8");
+    assert.match(source, /powerShellStartupError/);
+    assert.match(source, /WINDOWS_POWERSHELL_CANDIDATES/);
+    assert.doesNotMatch(source, /throw lastError \|\| new Error\("PowerShell is required/);
+  }
 });
 
 test("the Windows hidden prompt is passed as an encoded command", () => {

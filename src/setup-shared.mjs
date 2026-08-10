@@ -23,6 +23,10 @@ import { providerEndpointStatus, writeProviderEndpoint } from "./provider-endpoi
 import { providerOnboardingSnapshot } from "./provider-onboarding.mjs";
 import { configuredProviderIds, validateProviderIds } from "./provider-selection.mjs";
 import { renderProviderChoices, toggleSelection } from "./setup-ui.mjs";
+import {
+  powerShellStartupError,
+  WINDOWS_POWERSHELL_CANDIDATES,
+} from "./windows-powershell.mjs";
 
 // Target-agnostic setup helpers shared by every target's <target>-setup.mjs.
 // Only the app name, the provider-key command hint, and the install/doctor
@@ -71,8 +75,8 @@ export function promptLine(label, defaultValue = "") {
   if (process.platform === "win32") {
     const prompt = `${label}${defaultValue ? ` [${defaultValue}]` : ""}`;
     const script = "$answer = Read-Host $env:MODEL_ROUTER_PROMPT_LABEL; [Console]::Out.Write($answer)";
-    let lastError;
-    for (const executable of ["powershell.exe", "pwsh.exe"]) {
+    const failures = [];
+    for (const executable of WINDOWS_POWERSHELL_CANDIDATES) {
       try {
         const answer = execFileSync(
           executable,
@@ -85,10 +89,10 @@ export function promptLine(label, defaultValue = "") {
         ).trim();
         return answer || defaultValue;
       } catch (error) {
-        lastError = error;
+        failures.push(error);
       }
     }
-    throw lastError || new Error("PowerShell is required for guided setup on Windows.");
+    throw powerShellStartupError(failures, "PowerShell is required for guided setup on Windows.");
   }
   let descriptor;
   try {

@@ -64,6 +64,14 @@ provider with `./bin/providers enable PROVIDER`.
 Then fully quit Codex, reopen it, and create a new task. Closing only a window
 does not reload `model_catalog_json`.
 
+Current Windows releases run the unified desktop app as `ChatGPT`, not
+`Codex`. If closing the window leaves it resident, quit it from the tray or,
+after saving any active work, stop only that app process:
+
+```powershell
+Get-Process ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
 Inspect Codex's startup catalog directly:
 
 ```sh
@@ -124,9 +132,9 @@ not offer a safe per-app bypass for this failure. Until xAI publishes an
 official CLI build that Windows allows, use the API-key provider instead:
 
 ```powershell
-./model-router.ps1 codex provider-key grok-api set
-./model-router.ps1 codex providers enable grok-api
-./model-router.ps1 codex doctor
+.\model-router.cmd codex provider-key grok-api set
+.\model-router.cmd codex providers enable grok-api
+.\model-router.cmd codex doctor
 ```
 
 An OAuth session created while the executable was allowed is not a durable
@@ -289,7 +297,7 @@ Windows PowerShell:
 
 ```powershell
 Get-ScheduledTask -TaskName "Codex Router"
-./codex-router.ps1 doctor --fix
+.\model-router.cmd codex doctor --fix
 ```
 
 The task runs `start-codex-router-hidden.vbs` from the state directory under

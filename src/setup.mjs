@@ -31,6 +31,10 @@ import {
   readVisionBridgeSettings,
   visionBridgeConfigured,
 } from "./vision-bridge-state.mjs";
+import {
+  powerShellStartupError,
+  WINDOWS_POWERSHELL_CANDIDATES,
+} from "./windows-powershell.mjs";
 
 const args = process.argv.slice(2);
 const guided = args.includes("--guided");
@@ -118,8 +122,8 @@ function promptLine(label, defaultValue = "") {
   if (process.platform === "win32") {
     const prompt = `${label}${defaultValue ? ` [${defaultValue}]` : ""}`;
     const script = "$answer = Read-Host $env:CODEX_ROUTER_PROMPT_LABEL; [Console]::Out.Write($answer)";
-    let lastError;
-    for (const executable of ["powershell.exe", "pwsh.exe"]) {
+    const failures = [];
+    for (const executable of WINDOWS_POWERSHELL_CANDIDATES) {
       try {
         const answer = execFileSync(
           executable,
@@ -132,10 +136,10 @@ function promptLine(label, defaultValue = "") {
         ).trim();
         return answer || defaultValue;
       } catch (error) {
-        lastError = error;
+        failures.push(error);
       }
     }
-    throw lastError || new Error("PowerShell is required for guided setup on Windows.");
+    throw powerShellStartupError(failures, "PowerShell is required for guided setup on Windows.");
   }
   let descriptor;
   try {

@@ -37,6 +37,68 @@ $RepositoryUrl = if ($env:CODEX_ROUTER_REPOSITORY_URL) {
 } else {
   "https://github.com/mavalko13/codex-router-litellm.git"
 }
+$UseGuided = $Guided -or (-not $Auto -and [Environment]::UserInteractive)
+
+function Update-ProcessPath {
+  $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $env:Path = (@($MachinePath, $UserPath, $env:Path) | Where-Object { $_ }) -join ";"
+}
+
+function Confirm-PackageInstall([string]$DisplayName) {
+  if (-not $UseGuided) { return $false }
+  $Answer = Read-Host "$DisplayName is required. Install it with WinGet now? [Y/n]"
+  return -not $Answer -or $Answer.Trim().ToLowerInvariant() -in @("y", "yes")
+}
+
+function Install-WinGetPackage(
+  [string]$Id,
+  [string]$DisplayName,
+  [scriptblock]$Ready,
+  [string]$Help
+) {
+  if (& $Ready) { return }
+  if (-not (Confirm-PackageInstall $DisplayName)) { throw "$DisplayName is required. $Help" }
+  if (-not (Get-Command "winget" -ErrorAction SilentlyContinue)) {
+    throw "$DisplayName is required and WinGet is unavailable. $Help"
+  }
+  $WingetAction = if ($Id -eq "OpenJS.NodeJS.LTS" -and (Get-Command "node" -ErrorAction SilentlyContinue)) {
+    "upgrade"
+  } else {
+    "install"
+  }
+  & winget $WingetAction --id=$Id -e --accept-source-agreements --accept-package-agreements
+  if ($LASTEXITCODE -ne 0) { throw "WinGet could not install $DisplayName. $Help" }
+  Update-ProcessPath
+  if (-not (& $Ready)) {
+    throw "$DisplayName was installed but is not available in this PowerShell process. Reopen PowerShell and rerun the same installer command."
+  }
+}
+
+function Test-NodeVersion {
+  if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) { return $false }
+  try {
+    $Parts = (& node -p "process.versions.node").Trim().Split(".")
+    return [int]$Parts[0] -gt 22 -or ([int]$Parts[0] -eq 22 -and [int]$Parts[1] -ge 19)
+  } catch {
+    return $false
+  }
+}
+
+function Test-PythonRuntime {
+  if (Get-Command "uv" -ErrorAction SilentlyContinue) { return $true }
+  foreach ($Candidate in @(
+    @{ Command = "py"; Arguments = @("-3", "-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)") },
+    @{ Command = "python"; Arguments = @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)") }
+  )) {
+    if (-not (Get-Command $Candidate.Command -ErrorAction SilentlyContinue)) { continue }
+    $CandidateCommand = $Candidate.Command
+    $CandidateArguments = $Candidate.Arguments
+    & $CandidateCommand @CandidateArguments 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+  }
+  return $false
+}
 
 function Assert-Command([string]$Name, [string]$Help) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -99,8 +161,15 @@ $ScriptDirectory = $PSScriptRoot
 if (-not $ScriptDirectory) { $ScriptDirectory = (Get-Location).Path }
 
 if (-not $CheckoutInstall) {
-  Assert-Command "git" "Install Git for Windows from https://git-scm.com/download/win."
-  Assert-Command "node" "Install Node.js 24 LTS from https://nodejs.org/."
+  Install-WinGetPackage "Git.Git" "Git for Windows" {
+    [bool](Get-Command "git" -ErrorAction SilentlyContinue)
+  } "Install Git for Windows from https://git-scm.com/download/win."
+  Install-WinGetPackage "OpenJS.NodeJS.LTS" "Node.js 24 LTS" {
+    Test-NodeVersion
+  } "Install Node.js 24 LTS from https://nodejs.org/."
+  Install-WinGetPackage "astral-sh.uv" "uv with managed Python 3.12" {
+    Test-PythonRuntime
+  } "Install uv from https://docs.astral.sh/uv/."
   Assert-Command "npm" "npm is included with Node.js."
 
   if (Test-RouterCheckout $ScriptDirectory) {
@@ -190,7 +259,6 @@ if (-not $CheckoutInstall) {
 
   $SetupScript = "src\setup.mjs"
   $SetupArguments = @((Join-Path $Repository $SetupScript))
-  $UseGuided = $Guided -or (-not $Auto -and [Environment]::UserInteractive)
   if ($UseGuided) { $SetupArguments += "--guided" }
   if ($Providers) { $SetupArguments += @("--providers", $Providers) }
   if ($MigrateKnown) { $SetupArguments += "--migrate-known" }
@@ -317,6 +385,13 @@ try {
   if ($AdoptNativeCatalog) { $TransactionArguments += "--adopt-native-catalog" }
   & node @TransactionArguments
   if ($LASTEXITCODE -ne 0) { throw "Router installation transaction failed." }
+  # Match bin/install: custom routed models need these skills to restore the
+  # Codex app's native tools. This happens after the shared transaction commits
+  # so a best-effort skill-copy failure cannot roll back a healthy router.
+  & node src\skills-install.mjs install
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "The router is installed, but the Codex skill pack could not be refreshed. Retry with: node src\skills-install.mjs install"
+  }
   Write-Host "Installed the selected external model routes. Fully quit and reopen Codex."
 } catch {
   throw

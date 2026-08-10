@@ -42,8 +42,12 @@ macOS or Linux:
 Windows PowerShell:
 
 ```powershell
-./install.ps1 -Target codex -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Target codex -Guided -Providers litellm-gateway
 ```
+
+The provider argument skips the general provider menu but does not supply an
+endpoint. The operator still enters both values locally. No deployment-specific
+gateway URL is embedded in the public installer.
 
 The installer asks for these values in order:
 
@@ -51,7 +55,9 @@ The installer asks for these values in order:
    `https://gateway.example/v1`. Press Enter to accept the current value. The
    local LiteLLM default is `http://127.0.0.1:4000/v1`.
 2. **LiteLLM virtual key** — hidden input. The key is never accepted as a
-   command argument and is not printed after entry.
+   command argument and is not printed after entry. Windows shows neither
+   characters nor asterisks after paste; right-click, Shift+Insert, or
+   Ctrl+Shift+V in Windows Terminal, then press Enter.
 
 During installation/startup, the router automatically discovers models that
 the saved virtual key may use and publishes new IDs with conservative local
@@ -71,9 +77,9 @@ route corrections:
 On Windows, use the same commands through the PowerShell wrapper:
 
 ```powershell
-./model-router.ps1 codex discover-models litellm-gateway
-./model-router.ps1 codex curate-models litellm-gateway
-./model-router.ps1 codex doctor
+.\model-router.cmd codex discover-models litellm-gateway
+.\model-router.cmd codex curate-models litellm-gateway
+.\model-router.cmd codex doctor
 ```
 
 Fully quit and reopen Codex after curation so it reloads the generated model
@@ -167,7 +173,7 @@ Update the installed checkout with:
 
 If the update does not pass its install gates, the updater restores the prior
 revision. An operator can also run `./bin/rollback` (or
-`./codex-router.ps1 rollback` on Windows) while the retained revision is
+`.\model-router.cmd codex rollback` on Windows) while the retained revision is
 available. Update and repair run the same transactional publication order as
 installation. If generation, service startup, or health verification fails,
 the previous managed files and service definition are restored. Fully quit and
