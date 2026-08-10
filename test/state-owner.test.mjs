@@ -20,6 +20,23 @@ const FOREIGN_OWNER = path.resolve("/somewhere/else/codex-router");
 // upstream account error rather than a routing error.
 function withState({ owner }, run) {
   const stateDir = mkdtempSync(path.join(os.tmpdir(), "state-owner-"));
+  // Catalog-writing cases must reach agent synchronization even on CI hosts
+  // that do not have a Codex binary. Keep the native capture inside the same
+  // disposable state fixture instead of borrowing the operator's installation.
+  writeFileSync(
+    path.join(stateDir, "native-models.json"),
+    `${JSON.stringify({
+      models: [
+        {
+          slug: "gpt-test",
+          display_name: "GPT Test",
+          visibility: "list",
+          priority: 10,
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
   if (owner !== undefined) {
     writeFileSync(
       path.join(stateDir, "install-manifest.json"),
