@@ -97,15 +97,18 @@ test("live limits override checked-in, manual, and auto-curated model sizing", (
 test("metadata cache is atomic, private, and tolerant of malformed state", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "router-live-metadata-"));
   const target = path.join(directory, "live.json");
+  const malformedTarget = path.join(directory, "malformed.json");
   const sourceHash = providerSourceHash("https://gateway.example/v1");
   writeLiveModelMetadata({
     version: 1,
     providers: [{ id: "fixture", sourceHash, models: [{ id: "a", maxInputTokens: 272000 }] }],
   }, target);
-  assert.equal(statSync(target).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(statSync(target).mode & 0o777, 0o600);
+  }
   assert.equal(readLiveModelMetadata(target).providers[0].models[0].maxInputTokens, 272000);
-  writeFileSync(target, "not-json");
-  assert.deepEqual(readLiveModelMetadata(target), { version: 1, providers: [] });
+  writeFileSync(malformedTarget, "not-json");
+  assert.deepEqual(readLiveModelMetadata(malformedTarget), { version: 1, providers: [] });
 });
 
 test("fresh model-registry process overlays all user model origins", () => {
