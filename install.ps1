@@ -101,6 +101,7 @@ if (-not $ScriptDirectory) { $ScriptDirectory = (Get-Location).Path }
 if (-not $CheckoutInstall) {
   Assert-Command "git" "Install Git for Windows from https://git-scm.com/download/win."
   Assert-Command "node" "Install Node.js 24 LTS from https://nodejs.org/."
+  Assert-Command "npm" "npm is included with Node.js."
 
   if (Test-RouterCheckout $ScriptDirectory) {
     $Repository = $ScriptDirectory
@@ -157,6 +158,29 @@ if (-not $CheckoutInstall) {
       if ($LASTEXITCODE -ne 0) { throw "Unable to clone Codex Router." }
     }
     $Repository = $InstallDir
+  }
+
+  # setup.mjs imports the state transaction layer, which uses runtime npm
+  # packages such as proper-lockfile. A fresh clone has no node_modules yet,
+  # so bootstrap Node dependencies before the first setup import. The inner
+  # checkout installer uses the same fingerprint and will skip this work.
+  Push-Location $Repository
+  try {
+    $NodeDependencyStatus = (& node src/install-plan.mjs status node-deps 2>$null | Select-Object -Last 1)
+    if ($LASTEXITCODE -ne 0 -or "$NodeDependencyStatus".Trim() -ne "skip") {
+      & npm ci --omit=dev
+      if ($LASTEXITCODE -ne 0) { throw "npm dependency bootstrap failed." }
+      & node src/install-plan.mjs record node-deps
+      if ($LASTEXITCODE -ne 0) { throw "Recording the Node dependency state failed." }
+    }
+  } catch {
+    if ($PreviousRevision) {
+      & git -C $Repository switch --detach $PreviousRevision 2>$null | Out-Null
+      Write-Warning "Dependency bootstrap failed; the managed source checkout was restored to $PreviousRevision."
+    }
+    throw
+  } finally {
+    Pop-Location
   }
 
   if ($PrepareOnly) {

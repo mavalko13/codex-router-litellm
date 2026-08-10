@@ -19,6 +19,17 @@ function yamlString(value) {
   return JSON.stringify(String(value));
 }
 
+function modelInfoLines(model) {
+  const lines = [];
+  if (Number.isInteger(model.contextWindow) && model.contextWindow > 0) {
+    lines.push(`      max_input_tokens: ${model.contextWindow}`);
+  }
+  if (Number.isInteger(model.maxOutputTokens) && model.maxOutputTokens > 0) {
+    lines.push(`      max_output_tokens: ${model.maxOutputTokens}`);
+  }
+  return lines.length > 0 ? ["    model_info:", ...lines] : [];
+}
+
 export function renderLiteLlmConfig() {
   const lines = ["model_list:"];
   for (const model of MODELS) {
@@ -37,6 +48,7 @@ export function renderLiteLlmConfig() {
         `      model: ${yamlString(`ollama_chat/${model.upstreamModel}`)}`,
         `      api_base: ${yamlString(`os.environ/${provider.baseUrlEnv}_ROOT`)}`,
         `      num_ctx: ${LOCAL_NUM_CTX}`,
+        ...modelInfoLines(model),
         "",
       );
       continue;
@@ -59,6 +71,7 @@ export function renderLiteLlmConfig() {
       `      api_base: ${yamlString(`os.environ/${apiBaseEnv}`)}`,
       '      api_key: "os.environ/CODEX_ROUTER_INTERNAL_KEY"',
       ...(responsesSurface ? [] : ["      use_chat_completions_api: true"]),
+      ...modelInfoLines(model),
       "",
     );
   }

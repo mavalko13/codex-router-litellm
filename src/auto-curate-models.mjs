@@ -17,6 +17,13 @@ import {
   userModelEntry,
 } from "./user-models.mjs";
 import { assertStateOwnership } from "./state-owner.mjs";
+import {
+  mergeLiveProviderMetadata,
+  providerSourceHash,
+  readLiveModelMetadata,
+  writeLiveModelMetadata,
+} from "./live-model-metadata.mjs";
+import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
 
 const AUTO_DISCOVERY_TIMEOUT_MS = 10_000;
 
@@ -132,6 +139,9 @@ export async function autoCurateDiscoveredModels({
   selected = readProviderSelection,
   read = readUserModelsDetail,
   update = updateUserModels,
+  readLiveMetadata = readLiveModelMetadata,
+  writeLiveMetadata = writeLiveModelMetadata,
+  providerBaseUrl = (provider) => resolveProviderBaseUrl(provider, { persistent: true }),
   markPending = markAutoCurateRefreshPending,
   assertOwner = assertStateOwnership,
   log = (message) => console.error(`[codex-router] ${message}`),
@@ -150,11 +160,12 @@ export async function autoCurateDiscoveredModels({
   const configuredIds = new Set(configured());
   const eligible = [...providers.values()].filter(
     (provider) =>
-      provider.autoCurateDiscoveredModels === true &&
+      (provider.autoCurateDiscoveredModels === true || provider.importLiveModelMetadata === true) &&
       selectedIds.has(provider.id) &&
       configuredIds.has(provider.id),
   );
   const planned = [];
+  const metadataUpdates = [];
   const summaries = [];
   const failures = [];
   const initialMigration = migrateLegacyApiSurfaces(initial.models, providers);
@@ -169,14 +180,28 @@ export async function autoCurateDiscoveredModels({
       failures.push({ provider: provider.id, reason: "discovery-failed" });
       continue;
     }
-    const plan = planAutoCuratedModels({
-      provider,
-      discovered: discovery.discovered,
-      registryModels,
-      userModels: workingUserModels,
-    });
+    const plan = provider.autoCurateDiscoveredModels === true
+      ? planAutoCuratedModels({
+          provider,
+          discovered: discovery.discovered,
+          registryModels,
+          userModels: workingUserModels,
+        })
+      : { additions: [], skipped: [] };
     planned.push(...plan.additions);
     workingUserModels.push(...plan.additions);
+    if (provider.importLiveModelMetadata === true) {
+      try {
+        metadataUpdates.push({
+          id: provider.id,
+          sourceHash: providerSourceHash(providerBaseUrl(provider)),
+          models: discovery.metadata || [],
+        });
+      } catch {
+        log(`live metadata skipped for provider ${provider.id}; keeping the existing metadata cache`);
+        failures.push({ provider: provider.id, reason: "metadata-source-invalid" });
+      }
+    }
     const stale = uniqueSorted(discovery.unavailable);
     summaries.push({
       provider: provider.id,
@@ -188,7 +213,11 @@ export async function autoCurateDiscoveredModels({
     logIds(log, `provider ${provider.id} no longer advertises locally preserved ids`, stale);
   }
 
-  if (planned.length === 0 && initialMigration.migrated.length === 0) {
+  if (
+    planned.length === 0 &&
+    initialMigration.migrated.length === 0 &&
+    metadataUpdates.length === 0
+  ) {
     for (const summary of summaries) {
       log(`auto-curated 0 models for provider ${summary.provider}`);
     }
@@ -221,16 +250,29 @@ export async function autoCurateDiscoveredModels({
       gateways.add(entry.gatewayModel);
       upstream.add(upstreamKey);
     }
-    if (appended.length === 0 && migration.migrated.length === 0) {
-      return { value: { invalid: false, appended, migrated: [] } };
+    let livePayload = readLiveMetadata();
+    let metadataChanged = false;
+    for (const metadataUpdate of metadataUpdates) {
+      const mergedMetadata = mergeLiveProviderMetadata(livePayload, metadataUpdate);
+      livePayload = mergedMetadata.payload;
+      metadataChanged ||= mergedMetadata.changed;
+    }
+    if (appended.length === 0 && migration.migrated.length === 0 && !metadataChanged) {
+      return { value: { invalid: false, appended, migrated: [], metadataChanged: false } };
     }
     // The durable marker is committed before the overlay while both are under
     // the shared user-model transaction. A crash can therefore cause a
     // harmless extra rebuild, never a permanently unpublished model.
     markPending();
+    if (metadataChanged) writeLiveMetadata(livePayload);
     return {
       models: [...migration.models, ...appended],
-      value: { invalid: false, appended, migrated: migration.migrated },
+      value: {
+        invalid: false,
+        appended,
+        migrated: migration.migrated,
+        metadataChanged,
+      },
     };
   });
   const appended = transaction.appended;
@@ -253,6 +295,7 @@ export async function autoCurateDiscoveredModels({
   return {
     added: appended.length,
     migrated: (transaction.migrated || []).length,
+    metadataChanged: transaction.metadataChanged === true,
     providers: summaries,
     failures,
   };

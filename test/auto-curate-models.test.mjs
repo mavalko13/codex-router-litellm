@@ -90,6 +90,43 @@ test("auto-curation appends only new live ids with conservative metadata", async
   assert.ok(state.logs.some((line) => /"manual-model", "registered-model"/.test(line)));
 });
 
+test("live metadata changes publish even when every discovered model is already known", async () => {
+  const liveProvider = {
+    ...provider,
+    importLiveModelMetadata: true,
+    baseUrl: "https://gateway.example/v1",
+  };
+  let cached = { version: 1, providers: [] };
+  let pending = 0;
+  const state = dependencies({
+    providers: new Map([[liveProvider.id, liveProvider]]),
+    discover: async () => ({
+      discovered: ["registered-model", "manual-model"],
+      unavailable: [],
+      metadata: [
+        { id: "registered-model", maxInputTokens: 272000, maxOutputTokens: 128000 },
+        { id: "manual-model", maxInputTokens: 512000, maxOutputTokens: 64000 },
+      ],
+    }),
+    readLiveMetadata: () => cached,
+    writeLiveMetadata: (next) => { cached = next; },
+    providerBaseUrl: () => liveProvider.baseUrl,
+    markPending: () => { pending += 1; },
+  });
+  const result = await autoCurateDiscoveredModels(state.options);
+  assert.equal(result.added, 0);
+  assert.equal(result.metadataChanged, true);
+  assert.equal(pending, 1);
+  assert.deepEqual(cached.providers[0].models.map((model) => model.id), [
+    "manual-model",
+    "registered-model",
+  ]);
+
+  const second = await autoCurateDiscoveredModels(state.options);
+  assert.equal(second.metadataChanged, false);
+  assert.equal(pending, 1);
+});
+
 test("untrusted model ids are escaped before they reach logs", async () => {
   const state = dependencies({
     discover: async () => ({

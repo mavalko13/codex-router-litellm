@@ -261,13 +261,17 @@ the operator. The service reads `/v1/models` during installation/startup and
 every five minutes. It uses the saved key for background discovery, rather
 than an environment-only override that may disappear when the terminal exits.
 
-New IDs are added to protected local state with conservative metadata: text
-input only, a 131072-token context window, high reasoning effort, and no
+For every advertised model, reliable `max_input_tokens` and
+`max_output_tokens` values from LiteLLM are cached locally and applied to
+checked-in, manually curated, and automatically curated routes. Codex receives
+the live input limit as its context window; automatic compaction starts at 85%
+of that limit. If LiteLLM omits or rejects a value, new IDs use conservative
+metadata: text input only, a 131072-token fallback context window, high reasoning effort, and no
 unverified vision, search, reasoning-summary, or `apply_patch` capability.
 The provider's default route is Chat Completions, while the checked-in trusted
 `codex-gpt-` prefix selects Responses. Use the command above for any other
-alias that requires Responses. Existing entries and operator edits are
-preserved. A model missing from a later `/v1/models` response is logged but
+alias that requires Responses. Existing presentation and capability edits are
+preserved; live token limits remain authoritative when present. A model missing from a later `/v1/models` response is logged but
 never pruned automatically, and a failed discovery keeps the last usable
 routes and picker catalog.
 
