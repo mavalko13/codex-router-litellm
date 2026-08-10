@@ -40,7 +40,7 @@ macOS or Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh \
-  | sh -s -- --target codex --guided
+  | sh -s -- --target codex --guided --providers litellm-gateway
 ```
 
 Windows PowerShell:
@@ -48,16 +48,23 @@ Windows PowerShell:
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
 Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.ps1 -OutFile $installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
+
+These quick-install commands select only **Your LiteLLM Gateway**, then ask the
+user to enter their own OpenAI-compatible URL visibly and restricted virtual
+key through a hidden prompt. No operator endpoint or key is embedded in the
+installer. To open the full provider chooser instead, omit
+`--providers litellm-gateway` on macOS/Linux or `-Providers litellm-gateway` on
+Windows.
 
 On Windows, guided setup checks Git, Node.js, and `uv`/Python before changing
 Codex. When a prerequisite is missing it offers to install the exact package
 through WinGet and continues in the same PowerShell process after explicit
 confirmation. Automatic setup never installs a system prerequisite.
 
-The setup selects providers, detects existing authentication, can run the
-official `kimi login`, asks for a custom LiteLLM URL with visible input, prompts invisibly for provider credentials, installs a per-user
+The setup detects existing authentication, asks for a custom LiteLLM URL with
+visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
 request unless `--smoke-test` is explicitly selected.
 

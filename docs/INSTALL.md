@@ -45,7 +45,8 @@ definition stores the checkout's absolute path.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh | sh -s -- --guided
+curl -fsSL https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.sh \
+  | sh -s -- --guided --providers litellm-gateway
 ```
 
 Windows PowerShell:
@@ -53,8 +54,14 @@ Windows PowerShell:
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
 Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/main/install.ps1 -OutFile $installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Guided
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Guided -Providers litellm-gateway
 ```
+
+These commands skip the general provider menu but do not supply an endpoint or
+credential: setup still asks the operator for their own LiteLLM URL with
+visible input and for a restricted virtual key with hidden input. Omit the
+provider argument only when you intentionally want the advanced chooser with
+all supported providers.
 
 Guided Windows setup checks Git, Node.js 22.19+, and `uv`/Python before it
 changes Codex. When one is missing and WinGet is available, it asks before
@@ -89,8 +96,8 @@ skips it. On macOS the app bundle is placed in `~/Applications` and needs the
 Swift toolchain; a missing toolchain skips the step with guidance instead of
 failing setup. Windows still builds the tray manually with
 `scripts/build-desktop-tray.ps1`.
-Guided setup walks through numbered steps: a provider list you toggle by
-number (`a` selects all, `n` clears, Enter continues) with a live
+In advanced mode, guided setup walks through numbered steps: a provider list
+you toggle by number (`a` selects all, `n` clears, Enter continues) with a live
 ready/needs-key/needs-sign-in status per provider, credential onboarding for
 anything you selected that is not connected yet, and a review summary before
 any change is made. When `litellm-gateway` is selected, it asks for the gateway

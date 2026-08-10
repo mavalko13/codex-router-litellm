@@ -57,3 +57,19 @@ test("Windows docs use the policy-safe wrapper and the unified ChatGPT process",
   assert.match(troubleshooting, /Get-Process ChatGPT/);
   assert.doesNotMatch(troubleshooting, /Get-Process Codex/);
 });
+
+test("quick install selects LiteLLM while keeping endpoint entry interactive", () => {
+  const english = read("README.md");
+  const russian = read("README.ru.md");
+  const install = read("docs", "INSTALL.md");
+  const changelog = read("CHANGELOG.md");
+
+  for (const document of [english, russian]) {
+    assert.match(document, /--providers litellm-gateway/);
+    assert.match(document, /-Providers litellm-gateway/);
+    assert.match(document, /URL/);
+  }
+  assert.match(install, /do not supply an endpoint or\s+credential/);
+  assert.match(install, /advanced chooser/);
+  assert.match(changelog, /quick-install path no longer opens the full provider catalog/);
+});
