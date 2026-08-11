@@ -40,7 +40,18 @@ function modelCandidates(data, provider) {
 
 function modelIdsFromData(data, provider) {
   const candidates = modelCandidates(data, provider);
-  return [...new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean))].sort();
+  const ids = [...new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean))].sort();
+  // A non-empty generic /models list without one usable id is a malformed
+  // response, not proof that the operator has no models. This distinction is
+  // essential when the response is used as an authoritative overlay snapshot.
+  if (
+    data.length > 0 &&
+    ids.length === 0 &&
+    provider?.authProfile !== "github-copilot"
+  ) {
+    throw new Error("The provider returned an invalid model list.");
+  }
+  return ids;
 }
 
 const MAX_MODELS_BODY_BYTES = 8 * 1024 * 1024;

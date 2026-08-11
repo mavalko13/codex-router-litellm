@@ -19,7 +19,7 @@
           "apiSurface": "responses"
         }
       ],
-      "planNote": "Uses your own trusted LiteLLM endpoint and virtual key. Discovered models are added automatically and are never pruned automatically.",
+      "planNote": "Uses your own trusted LiteLLM endpoint and virtual key. Each valid live catalog snapshot automatically reconciles auto-curated overlay models; manual and checked-in models stay preserved.",
       "credential": {
         "environment": [
           "CODEX_ROUTER_LITELLM_API_KEY"

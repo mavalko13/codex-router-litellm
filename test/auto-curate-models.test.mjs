@@ -86,7 +86,7 @@ test("auto-curation appends only new live ids with conservative metadata", async
   assert.equal(added.supportsApplyPatchTool, false);
   assert.equal(added.multiAgentVersion, undefined);
   assert.equal(added.searchTool, undefined);
-  assert.ok(state.logs.some((line) => /auto-curated 1 models for provider trusted-dev/.test(line)));
+  assert.ok(state.logs.some((line) => /auto-curated 1 models and removed 0 models for provider trusted-dev/.test(line)));
   assert.ok(state.logs.some((line) => /"manual-model", "registered-model"/.test(line)));
 });
 
@@ -162,7 +162,9 @@ test("auto-curation is opt-in, selected, and credential-gated", async () => {
 });
 
 test("discovery failures are non-fatal and never echo provider error bodies", async () => {
+  let pending = 0;
   const state = dependencies({
+    markPending: () => { pending += 1; },
     discover: async () => {
       throw new Error("upstream echoed secret sk-live-do-not-log");
     },
@@ -170,22 +172,83 @@ test("discovery failures are non-fatal and never echo provider error bodies", as
   const result = await autoCurateDiscoveredModels(state.options);
   assert.equal(result.added, 0);
   assert.equal(state.writes.length, 0);
+  assert.equal(pending, 0);
   assert.equal(result.failures[0].reason, "discovery-failed");
   assert.ok(state.logs.some((line) => /keeping the existing catalog/.test(line)));
   assert.ok(state.logs.every((line) => !line.includes("sk-live-do-not-log")));
 });
 
-test("missing live ids are logged and preserved rather than pruned", async () => {
+test("a successful provider snapshot removes only explicitly auto-curated entries", async () => {
+  // These operator-owned entries deliberately have unusual metadata. The
+  // snapshot reconciler must retain their exact JSON shape even if the live
+  // provider no longer advertises their upstream ids.
+  const absentManual = {
+    ...manual,
+    upstreamModel: "manual-absent-from-live-snapshot",
+    slug: "trusted-dev/manual-absent-from-live-snapshot",
+    gatewayModel: "trusted-dev-manual-absent-from-live-snapshot",
+    displayName: "Keep this exact operator label",
+    description: "Whitespace and operator wording are intentional.",
+    customOperatorField: { nested: ["do", "not", "rewrite"] },
+  };
+  const legacyUnmarked = {
+    ...userModelEntry({ providerId: provider.id, upstreamId: "legacy-unmarked", priority: 141 }),
+    customOperatorField: "no autoCurated marker means operator-owned",
+  };
+  const explicitManual = {
+    ...userModelEntry({ providerId: provider.id, upstreamId: "explicit-manual", priority: 142 }),
+    autoCurated: false,
+  };
+  const staleAuto = {
+    ...userModelEntry({ providerId: provider.id, upstreamId: "stale-auto", priority: 143 }),
+    autoCurated: true,
+  };
+  const otherProviderAuto = {
+    ...userModelEntry({ providerId: "other-provider", upstreamId: "other-stale-auto", priority: 1 }),
+    autoCurated: true,
+  };
+  const originalManualJson = JSON.stringify(absentManual);
   const state = dependencies({
-    discover: async () => ({
-      discovered: ["registered-model", "manual-model"],
-      unavailable: ["temporarily-missing"],
+    read: () => ({
+      exists: true,
+      valid: true,
+      models: [absentManual, legacyUnmarked, explicitManual, staleAuto, otherProviderAuto],
     }),
+    discover: async () => ({ discovered: ["registered-model"], unavailable: [] }),
   });
+
+  await autoCurateDiscoveredModels(state.options);
+
+  assert.equal(state.writes.length, 1);
+  const written = state.writes[0];
+  assert.deepEqual(
+    written.map((entry) => entry.upstreamModel),
+    ["manual-absent-from-live-snapshot", "legacy-unmarked", "explicit-manual", "other-stale-auto"],
+  );
+  assert.equal(JSON.stringify(written[0]), originalManualJson);
+  assert.equal(written.some((entry) => entry.upstreamModel === "stale-auto"), false);
+});
+
+test("a removal-only snapshot commits its restart marker before the overlay", async () => {
+  const staleAuto = {
+    ...userModelEntry({ providerId: provider.id, upstreamId: "stale-auto", priority: 141 }),
+    autoCurated: true,
+  };
+  const events = [];
+  const state = dependencies({
+    read: () => ({ exists: true, valid: true, models: [manual, staleAuto] }),
+    discover: async () => ({ discovered: ["registered-model", "manual-model"], unavailable: [] }),
+    markPending: () => events.push("marker"),
+    update: (operation) => {
+      const result = operation({ exists: true, valid: true, models: [manual, staleAuto] });
+      if (Array.isArray(result?.models)) events.push("overlay");
+      return result?.value;
+    },
+  });
+
   const result = await autoCurateDiscoveredModels(state.options);
   assert.equal(result.added, 0);
-  assert.equal(state.writes.length, 0);
-  assert.ok(state.logs.some((line) => /locally preserved ids: "temporarily-missing"/.test(line)));
+  assert.deepEqual(events, ["marker", "overlay"]);
 });
 
 test("an unreadable overlay is never replaced", async () => {
