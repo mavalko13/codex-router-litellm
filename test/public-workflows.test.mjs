@@ -7,28 +7,29 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflow = (name) => readFileSync(path.join(root, ".github", "workflows", name), "utf8");
 
-test("public CI keeps automatic push and pull request triggers", () => {
+test("public CI keeps a short Windows-only pull request gate", () => {
   const source = workflow("ci.yml");
-  assert.match(source, /^\s+push:/m);
   assert.match(source, /^\s+pull_request:/m);
   assert.match(source, /^\s+workflow_dispatch:/m);
+  assert.doesNotMatch(source, /^\s+push:/m);
+  assert.match(source, /branches: \[beta, main\]/);
+  assert.match(source, /runs-on: windows-latest/);
+  assert.doesNotMatch(source, /macos-latest/);
+  assert.doesNotMatch(source, /ubuntu-latest/);
 });
 
-test("Windows service-only changes avoid unrelated cross-platform and desktop work", () => {
+test("public CI runs only the short Windows service and installer regression set", () => {
   const source = workflow("ci.yml");
-  assert.match(source, /windows_service_only/);
-  assert.match(source, /src\/service-windows\.mjs/);
-  assert.match(source, /Run the Windows service and installer regressions/);
+  assert.match(source, /Run Windows service and installer regressions/);
   assert.match(source, /node --test test\/service-render\.test\.mjs test\/windows-process-tree\.test\.mjs test\/installer-scripts\.test\.mjs test\/installer-handoff\.test\.mjs/);
-  assert.match(source, /Windows service-only change; covered by the Windows job/);
-  assert.match(source, /Desktop sources are unchanged/);
+  assert.match(source, /Parse PowerShell entrypoints/);
+  assert.match(source, /timeout-minutes: 8/);
 });
 
-test("public Python lock verification remains automatic and scheduled", () => {
+test("public Python lock verification is opt-in", () => {
   const source = workflow("python-lock.yml");
-  for (const trigger of ["push", "pull_request", "schedule", "workflow_dispatch"]) {
-    assert.match(source, new RegExp(`^\\s+${trigger}:`, "m"));
-  }
+  assert.match(source, /^\s+workflow_dispatch:/m);
+  for (const trigger of ["push", "pull_request", "schedule"]) assert.doesNotMatch(source, new RegExp(`^\\s+${trigger}:`, "m"));
 });
 
 test("CodeQL remains enabled for main, pull requests, and its schedule", () => {
