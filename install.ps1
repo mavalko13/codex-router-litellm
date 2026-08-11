@@ -337,7 +337,16 @@ try {
   }
 
   $Python = Join-Path $ScriptDirectory ".venv\Scripts\python.exe"
-  if ((Get-InstallStep "python-deps") -eq "skip") {
+  $LocalLiteLlmStatus = "required"
+  try {
+    $LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm 2>$null | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0) { $LocalLiteLlmStatus = "required" }
+  } catch {
+    $LocalLiteLlmStatus = "required"
+  }
+  if ($LocalLiteLlmStatus -eq "not-required") {
+    Write-Host "Selected providers bypass local LiteLLM; skipping the Python install."
+  } elseif ((Get-InstallStep "python-deps") -eq "skip") {
     Write-Host "LiteLLM already matches the pinned versions; skipping the Python install."
   } elseif (Get-Command "uv" -ErrorAction SilentlyContinue) {
     if (-not (Test-Path $Python)) {

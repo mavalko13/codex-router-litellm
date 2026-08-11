@@ -29,6 +29,7 @@ import {
   loopback,
 } from "./paths.mjs";
 import { MODEL_BY_SLUG, PROVIDERS, providerForModel } from "./model-registry.mjs";
+import { modelCanBypassLocalLiteLlm } from "./local-litellm-mode.mjs";
 import { createHealthCache } from "./health-cache.mjs";
 import { readNativeAliases } from "./native-alias.mjs";
 import { readNativeRedirect } from "./native-redirect.mjs";
@@ -81,6 +82,14 @@ const GATEWAY_BASE = (
   process.env.KIMI_GATEWAY_BASE_URL ||
   loopback(PORTS.gateway, "/v1")
 ).replace(/\/+$/, "");
+const API_FORWARD_BASE = (
+  process.env.CODEX_ROUTER_API_FORWARD_BASE_URL ||
+  process.env.MODEL_ROUTER_API_FORWARD_BASE_URL ||
+  loopback(PORTS.api, "/v1")
+).replace(/\/+$/, "");
+const LOCAL_LITELLM_ENABLED =
+  process.env.CODEX_ROUTER_LOCAL_LITELLM_ENABLED !== "0" &&
+  process.env.MODEL_ROUTER_LOCAL_LITELLM_ENABLED !== "0";
 const OAUTH_HEALTH =
   process.env.CODEX_ROUTER_OAUTH_HEALTH_URL ||
   process.env.KIMI_OAUTH_HEALTH_URL ||
@@ -344,6 +353,19 @@ function routedHeaders() {
   };
 }
 
+function routedTargetForRoute(route) {
+  const provider = providerForModel(route);
+  if (modelCanBypassLocalLiteLlm(route, provider)) {
+    return `${API_FORWARD_BASE}/responses`;
+  }
+  if (!LOCAL_LITELLM_ENABLED) {
+    throw new Error(
+      `Local LiteLLM is disabled, but ${route?.slug || "the requested model"} requires the local LiteLLM bridge.`,
+    );
+  }
+  return `${GATEWAY_BASE}/responses`;
+}
+
 function nativeTarget(pathname, search) {
   const withoutV1 = pathname.replace(/^\/v1(?=\/|$)/, "");
   return `${NATIVE_BASE}${withoutV1}${search}`;
@@ -425,7 +447,9 @@ async function healthPayload() {
       ? serviceHealth(OAUTH_HEALTH)
       : { reachable: true, enabled: false },
     apiEnabled ? serviceHealth(API_HEALTH) : { reachable: true, enabled: false },
-    serviceHealth(GATEWAY_HEALTH),
+    LOCAL_LITELLM_ENABLED
+      ? serviceHealth(GATEWAY_HEALTH)
+      : { reachable: true, enabled: false },
   ]);
   return {
     ok: oauth.reachable && api.reachable && gateway.reachable,
@@ -1206,7 +1230,7 @@ async function summarize(request, payload, route, signal) {
   // Compaction re-enters the same provider as the routed turn; Fireworks
   // rejects this OpenAI search parameter at that boundary too.
   if (providerForModel(route)?.id === "fireworks") delete body.web_search_options;
-  const upstream = await fetch(`${GATEWAY_BASE}/responses`, {
+  const upstream = await fetch(routedTargetForRoute(route), {
     method: "POST",
     headers: routedHeaders(),
     body: JSON.stringify(body),
@@ -1216,15 +1240,33 @@ async function summarize(request, payload, route, signal) {
   if (bytes.length > 32 * 1024 * 1024) {
     return { ok: false, status: 502, payload: { error: { message: "Compact response is too large." } } };
   }
-  const parsed = JSON.parse(bytes.toString("utf8"));
+  const bodyText = bytes.toString("utf8");
+  if (!upstream.ok) {
+    const provider = providerForModel(route);
+    const retryAfterHeader = upstream.headers.get("retry-after");
+    const retryAfterSeconds = Number(retryAfterHeader);
+    return {
+      ok: false,
+      status: upstream.status,
+      payload: translateGatewayError({
+        status: upstream.status,
+        bodyText,
+        modelName: route.displayName || route.slug,
+        providerName: provider?.ownedBy || provider?.displayName || route.provider,
+        providerKind: provider?.kind,
+        retryAfterSeconds: Number.isFinite(retryAfterSeconds)
+          ? retryAfterSeconds
+          : undefined,
+      }),
+      retryAfterHeader,
+    };
+  }
+  const parsed = JSON.parse(bodyText);
   // Compaction is a plain non-streaming call, so the usage block (when the
   // provider sends one) is already in hand. `tokenUsageFromPayload` returns
   // undefined when it is absent, and `recordUsageEvent` then omits the token
   // fields entirely rather than metering an invented zero.
   const usage = tokenUsageFromPayload(parsed);
-  if (!upstream.ok) {
-    return { ok: false, status: upstream.status, payload: parsed, usage };
-  }
   return { ok: true, summary: extractResponseText(parsed), input: originalInput, usage };
 }
 
@@ -1271,6 +1313,7 @@ function writeCompactionSse(response, model, summary) {
 async function handleRoutedCompaction(request, response, payload, route, signal, v2) {
   const result = await summarize(request, payload, route, signal);
   if (!result.ok) {
+    if (result.retryAfterHeader) response.setHeader("Retry-After", result.retryAfterHeader);
     writeJson(response, result.status, result.payload);
     return { status: result.status, usage: result.usage };
   }
@@ -1487,7 +1530,7 @@ async function handleResponses(request, response, requestUrl) {
         delete routed.reasoning_effort;
       }
       if (provider?.id === "fireworks") delete routed.web_search_options;
-      target = `${GATEWAY_BASE}/responses`;
+      target = routedTargetForRoute(route);
       headers = routedHeaders();
       routedBody = Buffer.from(JSON.stringify(routed), "utf8");
     } else {
@@ -1519,9 +1562,9 @@ async function handleResponses(request, response, requestUrl) {
         signal: controller.signal,
       },
       {
-        // Routed traffic terminates at the local gateway, which has its own
-        // error translation and Retry-After handling below; leave it exactly
-        // as it was.
+        // Routed traffic has provider-specific error handling below. Keep the
+        // historical no-retry behavior so we do not replay tool-carrying turns
+        // across an external provider boundary.
         retries: route ? 0 : undefined,
         canRetry: () => nothingRelayed(response),
         onRetry: (event) => logUpstreamRetry(event, requestedModel, requestUrl.pathname),
@@ -1530,7 +1573,8 @@ async function handleResponses(request, response, requestUrl) {
     upstreamRetries = retries;
     // Gateway error bodies leak LiteLLM's internal exception chain, which
     // reads like a router bug. Rewrite them to name the provider that failed.
-    // Native traffic passes through untouched: OpenAI errors are already clear.
+    // The direct API-forwarder path still relays an external LiteLLM gateway,
+    // so it needs the same boundary before errors reach Codex.
     if (route && !upstream.ok) {
       const provider = providerForModel(route);
       const retryAfterHeader = upstream.headers.get("retry-after");

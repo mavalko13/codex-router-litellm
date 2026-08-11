@@ -416,6 +416,174 @@ test("router refuses a known model whose provider is hidden", async () => {
   }
 });
 
+test("router direct-forwards litellm-gateway Chat models through external Responses", async () => {
+  const upstreamRequests = [];
+  let failure;
+  const upstream = await mockServer(async (request, response) => {
+    upstreamRequests.push({
+      url: request.url,
+      headers: request.headers,
+      body: await bodyJson(request),
+    });
+    if (failure === "response") {
+      json(response, 503, {
+        error: {
+          message:
+            "litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Upstream request failed: Gateway endpoint is unavailable. Received Model Group=private-codex-route\\nAvailable Model Group Fallbacks=None",
+        },
+      });
+      return;
+    }
+    if (failure === "compact") {
+      const body = Buffer.from(
+        JSON.stringify({
+          error: {
+            message:
+              "litellm.RateLimitError: RateLimitError: OpenAIException - Gateway rate limit reached. Received Model Group=private-codex-route\\nAvailable Model Group Fallbacks=None",
+          },
+        }),
+        "utf8",
+      );
+      response.writeHead(429, {
+        "Content-Type": "application/json",
+        "Content-Length": String(body.length),
+        "Retry-After": "17",
+      });
+      response.end(body);
+      return;
+    }
+    json(response, 200, {
+      id: "resp_direct_test",
+      object: "response",
+      output: [{ type: "message", content: [{ type: "output_text", text: "direct" }] }],
+    });
+  });
+  const localGatewayRequests = [];
+  const localGateway = await mockServer(async (request, response) => {
+    localGatewayRequests.push({ url: request.url, body: await bodyJson(request) });
+    json(response, 500, { error: { message: "local LiteLLM should not be called" } });
+  });
+  const testRoot = mkdtempSync(path.join(os.tmpdir(), "codex-router-direct-litellm-gateway-"));
+  const routerPort = await openPort();
+  const apiPort = await openPort();
+  writeFileSync(
+    path.join(testRoot, "enabled-providers.json"),
+    `${JSON.stringify({ version: 1, providers: ["litellm-gateway", "deepseek"] })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(path.join(testRoot, "litellm-gateway-api-key.secret"), "test-virtual-key\n", {
+    mode: 0o600,
+  });
+  writeFileSync(
+    path.join(testRoot, "provider-endpoints.json"),
+    `${JSON.stringify({
+      version: 1,
+      endpoints: { "litellm-gateway": `http://127.0.0.1:${upstream.port}/v1` },
+    })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    path.join(testRoot, "user-models.json"),
+    `${JSON.stringify({
+      version: 1,
+      models: [
+        {
+          slug: "litellm-gateway/kimi-k2-7-code",
+          gatewayModel: "litellm-gateway-kimi-k2-7-code",
+          upstreamModel: "ollama-cloud-kimi-k2-7-code",
+          provider: "litellm-gateway",
+          listed: true,
+          apiSurface: "chat-completions",
+          displayName: "Kimi Gateway",
+          description: "Test Chat model via the external LiteLLM Responses endpoint.",
+          priority: 1,
+          defaultEffort: "high",
+          reasoningLevels: [{ effort: "high", description: "Test reasoning" }],
+          contextWindow: 131072,
+          autoCompact: 110000,
+          inputModalities: ["text"],
+          compHash: "litellm-gateway-kimi-k2-7-code-test",
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
+
+  const api = run("api-forwarder.mjs", {
+    MODEL_ROUTER_STATE_DIR: testRoot,
+    CODEX_ROUTER_STATE_DIR: testRoot,
+    MODEL_ROUTER_API_PORT: String(apiPort),
+    CODEX_ROUTER_SHOW_ALL_MODELS: "0",
+    CODEX_ROUTER_QUIET: "1",
+  });
+  const router = run("router.mjs", {
+    MODEL_ROUTER_STATE_DIR: testRoot,
+    CODEX_ROUTER_STATE_DIR: testRoot,
+    CODEX_ROUTER_PORT: String(routerPort),
+    CODEX_ROUTER_API_FORWARD_BASE_URL: `http://127.0.0.1:${apiPort}/v1`,
+    CODEX_ROUTER_API_HEALTH_URL: `http://127.0.0.1:${apiPort}/health`,
+    CODEX_ROUTER_GATEWAY_BASE_URL: `http://127.0.0.1:${localGateway.port}/v1`,
+    CODEX_ROUTER_GATEWAY_HEALTH_URL: `http://127.0.0.1:${localGateway.port}/health`,
+    CODEX_ROUTER_LOCAL_LITELLM_ENABLED: "1",
+    MODEL_ROUTER_LOCAL_LITELLM_ENABLED: "1",
+    CODEX_ROUTER_SHOW_ALL_MODELS: "0",
+    CODEX_ROUTER_QUIET: "1",
+  });
+
+  try {
+    await waitFor(`http://127.0.0.1:${apiPort}/health`, api, {
+      Authorization: `Bearer ${INTERNAL_KEY}`,
+    });
+    await waitFor(`${routerBase(routerPort)}/models`, router);
+
+    const response = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+    });
+    assert.equal(response.status, 200, await response.text());
+    assert.equal(upstreamRequests.length, 1);
+    assert.equal(upstreamRequests[0].url, "/v1/responses");
+    assert.equal(upstreamRequests[0].headers.authorization, "Bearer test-virtual-key");
+    assert.equal(upstreamRequests[0].body.model, "ollama-cloud-kimi-k2-7-code");
+    assert.equal(localGatewayRequests.length, 0);
+
+    failure = "response";
+    const directFailure = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+    });
+    assert.equal(directFailure.status, 503);
+    const directFailurePayload = await directFailure.json();
+    assert.equal(directFailurePayload.error.type, "server_error");
+    assert.match(directFailurePayload.error.message, /Gateway endpoint is unavailable/);
+    assert.doesNotMatch(directFailurePayload.error.message, /litellm|Model Group|Fallbacks/i);
+
+    failure = "compact";
+    const compactFailure = await fetch(`${routerBase(routerPort)}/responses/compact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+    });
+    assert.equal(compactFailure.status, 429);
+    assert.equal(compactFailure.headers.get("retry-after"), "17");
+    const compactFailurePayload = await compactFailure.json();
+    assert.equal(compactFailurePayload.error.type, "rate_limit_error");
+    assert.match(compactFailurePayload.error.message, /Retry in about 17s\./);
+    assert.match(compactFailurePayload.error.message, /Gateway rate limit reached/);
+    assert.doesNotMatch(compactFailurePayload.error.message, /litellm|Model Group|Fallbacks/i);
+    assert.equal(upstreamRequests.length, 3);
+    assert.equal(localGatewayRequests.length, 0);
+  } finally {
+    await stopChild(router);
+    await stopChild(api);
+    await closeServer(upstream.server);
+    await closeServer(localGateway.server);
+    rmSync(testRoot, { recursive: true, force: true });
+  }
+});
+
 test("router rewrites gateway errors to name the failing provider", async () => {
   const gateway = await mockServer(async (request, response) => {
     await bodyJson(request);

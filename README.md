@@ -68,11 +68,17 @@ visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
 request unless `--smoke-test` is explicitly selected.
 
+When only **Your LiteLLM Gateway** is selected, the Router sends its text routes
+directly to that gateway's OpenAI Responses endpoint and does not install or
+run a local Python/LiteLLM adapter. Selecting any provider that needs the local
+bridge automatically restores the adapter.
+
 Requirements:
 
 - The Codex App or CLI.
 - Node.js 22.19 or newer; Node.js 24 LTS is recommended.
-- `uv`, or Python 3.10+ with `venv` (guided Windows setup can install `uv`).
+- `uv`, or Python 3.10+ with `venv`, when a selected provider needs the local
+  LiteLLM bridge (guided Windows setup can install `uv`).
 - Git for the managed one-command checkout and rollback (guided Windows setup
   can install it).
 
@@ -175,6 +181,10 @@ terminal closure and is available to launchd, systemd, and Windows Task
 Scheduler. `CODEX_ROUTER_LITELLM_BASE_URL` can temporarily override it for a
 foreground command. Keep the virtual key restricted by model, budget, rate,
 and concurrency in LiteLLM; never reuse an administrator or master key.
+When `litellm-gateway` is the only selected provider and its external endpoint
+supports Responses for the curated text models, routed traffic bypasses the
+local LiteLLM adapter and goes through the credential forwarder directly to
+that endpoint, including model groups whose upstream API is Chat Completions.
 See the [complete LiteLLM gateway guide](docs/LITELLM-GATEWAY.md) for request
 flow, local state, security boundaries, updates, and platform verification.
 
@@ -1133,23 +1143,27 @@ replace them.
 
 ```mermaid
 flowchart LR
-  C["Codex Responses :4102"] --> L1["LiteLLM :4100"]
+  C["Codex Responses :4102"] --> R["Router"]
+  R -->|"direct litellm-gateway Responses"| A1["API keys :4103"]
+  R -->|"translation needed"| L1["LiteLLM :4100"]
   L1 --> K1["Kimi OAuth :4101"]
-  L1 --> A1["API keys :4103"]
+  L1 --> A1
   K1 --> P["External providers"]
   A1 --> P
 ```
 
 Codex sends the Responses API.
-LiteLLM translates that contract to each provider's native protocol,
+LiteLLM translates that contract when a selected provider needs a local bridge,
 including OpenAI-compatible Chat Completions and Anthropic Messages, with
-streaming and tool-call shapes preserved. Every listener binds to `127.0.0.1`.
+streaming and tool-call shapes preserved. Direct `litellm-gateway` models skip
+that hop when the external gateway provides their Responses route. Every
+listener binds to `127.0.0.1`.
 
 The router authenticates the caller before reading model traffic and
-passes only a random internal key to LiteLLM. The final forwarder discards
-that key and injects only the selected provider credential. Browser-originated
-requests are rejected, secrets are never exposed by public health routes, and
-network-facing errors are sanitized.
+passes only a random internal key to local components. The final forwarder
+discards that key and injects only the selected provider credential.
+Browser-originated requests are rejected, secrets are never exposed by public
+health routes, and network-facing errors are sanitized.
 
 Codex still owns the agent loop, tools, permissions, files, plugins,
 skills, MCP servers, and conversation state. The router handles model inference

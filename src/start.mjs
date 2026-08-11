@@ -22,20 +22,21 @@ import {
 } from "./paths.mjs";
 import { waitForHealth as pollHealth } from "./health-probe.mjs";
 
-const litellm =
-  process.env.MODEL_ROUTER_LITELLM_BIN ||
-  (TARGET === "codex"
-    ? process.env.CODEX_ROUTER_LITELLM_BIN || process.env.KIMI_LITELLM_BIN
-    : undefined) ||
-  path.join(
-    SOURCE_ROOT,
-    ".venv",
-    process.platform === "win32" ? "Scripts" : "bin",
-    process.platform === "win32" ? "litellm.exe" : "litellm",
+function resolveLiteLlmBinary() {
+  return (
+    process.env.MODEL_ROUTER_LITELLM_BIN ||
+    (TARGET === "codex"
+      ? process.env.CODEX_ROUTER_LITELLM_BIN || process.env.KIMI_LITELLM_BIN
+      : undefined) ||
+    path.join(
+      SOURCE_ROOT,
+      ".venv",
+      process.platform === "win32" ? "Scripts" : "bin",
+      process.platform === "win32" ? "litellm.exe" : "litellm",
+    )
   );
-if (!existsSync(litellm)) {
-  throw new Error(`LiteLLM is not installed at ${litellm}; run ./bin/install.`);
 }
+
 if (!existsSync(INTERNAL_SECRET_PATH)) {
   throw new Error(`Internal service key is missing; run ./bin/install.`);
 }
@@ -95,12 +96,6 @@ if (!startupAutoCurate.ok) {
     "[model-router] automatic model discovery failed; continuing with the existing local catalog",
   );
 }
-// Publish routes before the picker. If catalog generation fails, an older
-// picker remains a safe subset of the fresh routes; the inverse would expose
-// a model that the running LiteLLM process cannot route.
-const { writeLiteLlmConfig } = await import("./litellm-config.mjs");
-writeLiteLlmConfig();
-
 if (existsSync(AUTO_CURATE_PENDING_PATH)) {
   const catalogRefresh = spawnSync(
     process.execPath,
@@ -117,6 +112,20 @@ if (existsSync(AUTO_CURATE_PENDING_PATH)) {
       "[model-router] catalog refresh failed; continuing with the existing local catalog",
     );
   }
+}
+
+const { localLiteLlmRequiredForSelection } = await import("./local-litellm-mode.mjs");
+const localLiteLlmRequired = localLiteLlmRequiredForSelection();
+const litellm = localLiteLlmRequired ? resolveLiteLlmBinary() : undefined;
+if (localLiteLlmRequired && !existsSync(litellm)) {
+  throw new Error(`LiteLLM is not installed at ${litellm}; run ./bin/install.`);
+}
+if (localLiteLlmRequired) {
+  // Publish routes before the picker. If catalog generation fails, an older
+  // picker remains a safe subset of the fresh routes; the inverse would expose
+  // a model that the running LiteLLM process cannot route.
+  const { writeLiteLlmConfig } = await import("./litellm-config.mjs");
+  writeLiteLlmConfig();
 }
 
 const commonEnv = {
@@ -139,6 +148,7 @@ const commonEnv = {
   MODEL_ROUTER_GROK_OAUTH_PORT: String(PORTS.grokOauth),
   GROK_OAUTH_FORWARD_BASE_URL: loopback(PORTS.grokOauth, "/v1"),
   MODEL_ROUTER_QUIET: "1",
+  MODEL_ROUTER_LOCAL_LITELLM_ENABLED: localLiteLlmRequired ? "1" : "0",
   CODEX_ROUTER_CALLER_KEY: callerKey,
   CODEX_ROUTER_INTERNAL_KEY: internalKey,
   KIMI_INTERNAL_KEY: internalKey,
@@ -146,6 +156,7 @@ const commonEnv = {
   CODEX_ROUTER_API_FORWARD_BASE_URL: loopback(PORTS.api, "/v1"),
   CODEX_ROUTER_ANTHROPIC_FORWARD_BASE_URL: loopback(PORTS.api),
   CODEX_ROUTER_GATEWAY_BASE_URL: loopback(PORTS.gateway, "/v1"),
+  CODEX_ROUTER_LOCAL_LITELLM_ENABLED: localLiteLlmRequired ? "1" : "0",
   CODEX_ROUTER_OAUTH_HEALTH_URL: loopback(PORTS.oauth, "/health"),
   CODEX_ROUTER_API_HEALTH_URL: loopback(PORTS.api, "/health"),
   CODEX_ROUTER_GATEWAY_HEALTH_URL: loopback(PORTS.gateway, "/health/liveliness"),
@@ -301,25 +312,28 @@ async function main() {
     Authorization: `Bearer ${internalKey}`,
   }, 30_000, undefined, grokForwarder);
 
-  const gateway = run(litellm, [
-    "--config",
-    LITELLM_CONFIG_PATH,
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(PORTS.gateway),
-  ]);
-  // LiteLLM cold starts can take minutes when launchd starves the job under
-  // system load; killing it mid-import restarts the import from scratch and
-  // the service loops forever, so wait long enough for a starved import.
-  await waitForHealth(
-    "LiteLLM gateway",
-    loopback(PORTS.gateway, "/health/liveliness"),
-    { Authorization: `Bearer ${internalKey}` },
-    300_000,
-    undefined,
-    gateway,
-  );
+  let gateway;
+  if (localLiteLlmRequired) {
+    gateway = run(litellm, [
+      "--config",
+      LITELLM_CONFIG_PATH,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(PORTS.gateway),
+    ]);
+    // LiteLLM cold starts can take minutes when launchd starves the job under
+    // system load; killing it mid-import restarts the import from scratch and
+    // the service loops forever, so wait long enough for a starved import.
+    await waitForHealth(
+      "LiteLLM gateway",
+      loopback(PORTS.gateway, "/health/liveliness"),
+      { Authorization: `Bearer ${internalKey}` },
+      300_000,
+      undefined,
+      gateway,
+    );
+  }
 
   const frontend = FRONTEND;
   const frontendService = frontend.service;
@@ -339,7 +353,7 @@ async function main() {
     waitForExit(kimiForwarder, "OAuth forwarder"),
     waitForExit(api, "API forwarder"),
     waitForExit(grokForwarder, "Grok OAuth forwarder"),
-    waitForExit(gateway, "LiteLLM gateway"),
+    ...(gateway ? [waitForExit(gateway, "LiteLLM gateway")] : []),
     waitForExit(router, frontend.label),
   ]);
   if (!shuttingDown) {

@@ -271,6 +271,24 @@ test("native catalog adoption is inside both installer rollback transactions", (
   );
 });
 
+test("both managed installers share the local LiteLLM bypass gate", () => {
+  const posix = readFileSync(path.join(root, "bin", "install"), "utf8");
+  const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
+
+  assert.match(posix, /src\/install-plan\.mjs local-litellm/);
+  assert.match(windows, /src\/install-plan\.mjs local-litellm/);
+  assert.match(posix, /Selected providers bypass local LiteLLM; skipping the Python install\./);
+  assert.match(windows, /Selected providers bypass local LiteLLM; skipping the Python install\./);
+  assert.ok(
+    posix.indexOf("src/install-plan.mjs local-litellm") <
+      posix.indexOf("uv pip install --python .venv/bin/python --require-hashes"),
+  );
+  assert.ok(
+    windows.indexOf("src/install-plan.mjs local-litellm") <
+      windows.indexOf("uv pip install --python $Python --require-hashes"),
+  );
+});
+
 test("rollback --force reaches the updater on Windows", () => {
   // bin/rollback runs `update.mjs rollback "$@"`: the subcommand is fixed and
   // the caller's flags are appended to it. Replacing the whole list with

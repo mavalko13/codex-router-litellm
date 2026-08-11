@@ -14,7 +14,8 @@ Four pieces make the integration work:
 
 - A generated catalog places external models beside native GPT models.
 - A dispatcher chooses native or external routing by namespaced model ID.
-- LiteLLM translates Responses requests, streams, and tool calls.
+- LiteLLM translates Responses requests, streams, and tool calls only when a
+  selected model needs the local bridge.
 - Credential forwarders inject only the selected provider's authentication.
 
 ## Request flow
@@ -36,17 +37,25 @@ sequenceDiagram
     R-->>C: Responses stream
   else Registry model
     C->>R: Capability URL + Responses request + namespaced model
-    R->>L: Gateway model + internal key
-    L->>L: Responses to Chat Completions
-    alt Kimi Code OAuth
-      L->>O: Chat request + internal key
-      O->>P: Kimi model + refreshed OAuth bearer
-    else API-key provider
-      L->>A: Chat request + internal key
-      A->>P: Upstream model + selected provider key
+    alt Direct litellm-gateway model through external Responses
+      R->>A: Upstream model + internal key
+      A->>P: Responses request + selected provider key
+      P-->>A: Responses stream
+      A-->>R: Responses stream
+      R-->>C: Responses stream
+    else Local bridge required
+      R->>L: Gateway model + internal key
+      L->>L: Responses to Chat Completions
+      alt Kimi Code OAuth through bridge
+        L->>O: Chat request + internal key
+        O->>P: Kimi model + refreshed OAuth bearer
+      else API-key provider through bridge
+        L->>A: Chat request + internal key
+        A->>P: Upstream model + selected provider key
+      end
+      P-->>L: Chat Completions stream
+      L-->>C: Responses events through router
     end
-    P-->>L: Chat Completions stream
-    L-->>C: Responses events through router
   end
 ```
 
