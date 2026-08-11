@@ -369,9 +369,10 @@ rebuilds them regardless, as does `./bin/install --force-deps`
 
 For the operator-owned `litellm-gateway`, installation and startup use the
 saved restricted virtual key to discover live models automatically. New IDs
-are appended with conservative metadata; missing IDs are never pruned and a
-failed check keeps the previous routes and catalog. The service checks again
-every five minutes unless `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`. A model
+are appended with conservative metadata; a successfully parsed snapshot removes
+only absent `autoCurated: true` overlay IDs, never manual or checked-in models.
+A failed or invalid check keeps the previous routes and catalog. The service
+checks again every five minutes unless `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`. A model
 that requires OpenAI Responses instead of the default Chat Completions can be
 corrected with `curate-models litellm-gateway --models MODEL_ID --api-surface
 responses --apply` without discarding hand-edited metadata.

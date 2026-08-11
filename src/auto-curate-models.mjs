@@ -120,13 +120,32 @@ export function planAutoCuratedModels({
   return { additions, skipped };
 }
 
+export function planAutoCuratedRemovals({ provider, discovered, userModels }) {
+  const advertised = new Set(uniqueSorted(discovered));
+  return userModels.filter(
+    (model) =>
+      model?.provider === provider.id &&
+      model?.autoCurated === true &&
+      !advertised.has(String(model.upstreamModel)),
+  );
+}
+
+function validDiscoverySnapshot(discovery) {
+  // discoverProviderModels has already parsed and normalized the upstream
+  // response. Keep this guard at the mutation boundary too, because callers
+  // may inject discovery (for example, installer and test orchestration).
+  return Array.isArray(discovery?.discovered) && discovery.discovered.every(
+    (id) => typeof id === "string" && id.trim().length > 0,
+  );
+}
+
 function logIds(log, prefix, ids) {
   if (ids.length > 0) log(`${prefix}: ${ids.map((id) => JSON.stringify(id)).join(", ")}`);
 }
 
-// This path is deliberately additive. A provider omitting a model may be a
-// transient ACL or network condition, so discovery records the miss and keeps
-// the local entry until the operator explicitly prunes it with curate-models.
+// An opted-in operator-owned provider treats a successfully parsed /models
+// response as authoritative for its automatic overlay only. Checked-in
+// registry models and manual entries never participate in this removal path.
 export async function autoCurateDiscoveredModels({
   providers = PROVIDERS,
   registryModels = MODELS,
@@ -165,6 +184,7 @@ export async function autoCurateDiscoveredModels({
       configuredIds.has(provider.id),
   );
   const planned = [];
+  const snapshots = new Map();
   const metadataUpdates = [];
   const summaries = [];
   const failures = [];
@@ -179,6 +199,14 @@ export async function autoCurateDiscoveredModels({
       log(`auto-curation failed for provider ${provider.id}; keeping the existing catalog`);
       failures.push({ provider: provider.id, reason: "discovery-failed" });
       continue;
+    }
+    if (!validDiscoverySnapshot(discovery)) {
+      log(`auto-curation received an invalid model snapshot for provider ${provider.id}; keeping the existing catalog`);
+      failures.push({ provider: provider.id, reason: "discovery-invalid" });
+      continue;
+    }
+    if (provider.autoCurateDiscoveredModels === true) {
+      snapshots.set(provider.id, new Set(uniqueSorted(discovery.discovered)));
     }
     const plan = provider.autoCurateDiscoveredModels === true
       ? planAutoCuratedModels({
@@ -202,26 +230,41 @@ export async function autoCurateDiscoveredModels({
         failures.push({ provider: provider.id, reason: "metadata-source-invalid" });
       }
     }
-    const stale = uniqueSorted(discovery.unavailable);
+    const stale = provider.autoCurateDiscoveredModels === true
+      ? planAutoCuratedRemovals({
+          provider,
+          discovered: discovery.discovered,
+          userModels: workingUserModels,
+        }).map((model) => String(model.upstreamModel))
+      : [];
     summaries.push({
       provider: provider.id,
       planned: plan.additions.length,
       skipped: plan.skipped,
-      stale,
+      stale: uniqueSorted(stale),
+      removed: 0,
     });
     logIds(log, `skipped already-known or colliding ids for provider ${provider.id}`, plan.skipped);
-    logIds(log, `provider ${provider.id} no longer advertises locally preserved ids`, stale);
+    logIds(log, `auto-curated ids absent from authoritative snapshot for provider ${provider.id}`, stale);
   }
 
   if (
     planned.length === 0 &&
     initialMigration.migrated.length === 0 &&
-    metadataUpdates.length === 0
+    metadataUpdates.length === 0 &&
+    ![...snapshots].some(([providerId, advertised]) =>
+      initialMigration.models.some(
+        (model) =>
+          model?.provider === providerId &&
+          model?.autoCurated === true &&
+          !advertised.has(String(model.upstreamModel)),
+      ),
+    )
   ) {
     for (const summary of summaries) {
-      log(`auto-curated 0 models for provider ${summary.provider}`);
+      log(`auto-curated 0 models and removed 0 models for provider ${summary.provider}`);
     }
-    return { added: 0, providers: summaries, failures };
+    return { added: 0, removed: 0, providers: summaries, failures };
   }
 
   // Re-read immediately before the atomic write. If manual curation changed
@@ -232,7 +275,7 @@ export async function autoCurateDiscoveredModels({
   // models, but it must not commit an overlay or its restart marker.
   assertOwner("write auto-curated model state");
   const transaction = update((latest) => {
-    if (!latest.valid) return { value: { invalid: true, appended: [] } };
+    if (!latest.valid) return { value: { invalid: true, appended: [], removed: [] } };
     const migration = migrateLegacyApiSurfaces(latest.models, providers);
     const slugs = new Set(migration.models.map((model) => String(model.slug)));
     const gateways = new Set(migration.models.map((model) => String(model.gatewayModel)));
@@ -250,6 +293,13 @@ export async function autoCurateDiscoveredModels({
       gateways.add(entry.gatewayModel);
       upstream.add(upstreamKey);
     }
+    const removed = migration.models.filter(
+      (model) =>
+        model?.autoCurated === true &&
+        snapshots.has(model.provider) &&
+        !snapshots.get(model.provider).has(String(model.upstreamModel)),
+    );
+    const removedModels = new Set(removed);
     let livePayload = readLiveMetadata();
     let metadataChanged = false;
     for (const metadataUpdate of metadataUpdates) {
@@ -257,8 +307,15 @@ export async function autoCurateDiscoveredModels({
       livePayload = mergedMetadata.payload;
       metadataChanged ||= mergedMetadata.changed;
     }
-    if (appended.length === 0 && migration.migrated.length === 0 && !metadataChanged) {
-      return { value: { invalid: false, appended, migrated: [], metadataChanged: false } };
+    if (
+      appended.length === 0 &&
+      removed.length === 0 &&
+      migration.migrated.length === 0 &&
+      !metadataChanged
+    ) {
+      return {
+        value: { invalid: false, appended, removed, migrated: [], metadataChanged: false },
+      };
     }
     // The durable marker is committed before the overlay while both are under
     // the shared user-model transaction. A crash can therefore cause a
@@ -266,20 +323,22 @@ export async function autoCurateDiscoveredModels({
     markPending();
     if (metadataChanged) writeLiveMetadata(livePayload);
     return {
-      models: [...migration.models, ...appended],
+      models: [...migration.models.filter((model) => !removedModels.has(model)), ...appended],
       value: {
         invalid: false,
         appended,
+        removed,
         migrated: migration.migrated,
         metadataChanged,
       },
     };
   });
   const appended = transaction.appended;
+  const removed = transaction.removed || [];
   if (transaction.invalid) {
     log("auto-curation write skipped because user-models.json became unreadable; preserving it");
     failures.push({ reason: "user-models-became-invalid" });
-    return { added: 0, providers: summaries, failures };
+    return { added: 0, removed: 0, providers: summaries, failures };
   }
 
   logIds(log, "migrated legacy apiSurface ids", transaction.migrated || []);
@@ -288,12 +347,18 @@ export async function autoCurateDiscoveredModels({
     const addedIds = appended
       .filter((model) => model.provider === summary.provider)
       .map((model) => model.upstreamModel);
+    const removedIds = removed
+      .filter((model) => model.provider === summary.provider)
+      .map((model) => model.upstreamModel);
     summary.added = addedIds.length;
-    log(`auto-curated ${addedIds.length} models for provider ${summary.provider}`);
+    summary.removed = removedIds.length;
+    log(`auto-curated ${addedIds.length} models and removed ${removedIds.length} models for provider ${summary.provider}`);
     logIds(log, `auto-curated ids for provider ${summary.provider}`, addedIds);
+    logIds(log, `removed auto-curated ids for provider ${summary.provider}`, removedIds);
   }
   return {
     added: appended.length,
+    removed: removed.length,
     migrated: (transaction.migrated || []).length,
     metadataChanged: transaction.metadataChanged === true,
     providers: summaries,

@@ -147,10 +147,12 @@ not an environment-only override.
 
 New IDs are appended to protected `user-models.json` with text-only,
 131072-token, high-effort defaults and no unverified vision, search,
-reasoning-summary, or `apply_patch` capability. Existing entries and manual
-edits win. A missing ID is logged but never pruned automatically, because it
-may reflect a transient ACL or catalog response. A discovery or publication
-failure keeps the last usable routes and picker catalog.
+reasoning-summary, or `apply_patch` capability. For this trusted, opted-in
+provider, a successfully parsed live `/models` snapshot is authoritative only
+for entries marked `autoCurated: true`: absent IDs are removed from that local
+overlay. Existing manual entries and checked-in registry models always win.
+A discovery or publication failure, non-2xx response, or invalid model list
+keeps the last usable routes and picker catalog.
 
 When new IDs are added, the supervisor restarts only the local router stack and
 publishes gateway routes before the picker catalog. If that sequence is
@@ -159,6 +161,13 @@ Desktop still needs a full quit and reopen to load the changed picker catalog.
 Set `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0` to disable periodic checks, or set
 an integer of at least `60000` milliseconds to change the interval. Startup
 discovery and manual curation remain available.
+
+Changing the saved virtual-key file or saved gateway endpoint while the
+supervisor is running schedules one debounced immediate discovery, then uses
+the normal pending-marker/restart publication path if the catalog changed. The
+watcher filters to only those two files; an unavailable or failed filesystem
+watcher leaves the running service and catalog unchanged, with periodic
+discovery still available as the fallback.
 
 ## Updating, rollback, and branches
 

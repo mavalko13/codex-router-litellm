@@ -97,12 +97,17 @@ declare validated prefix overrides. The generic LiteLLM default is
 `--api-surface chat-completions` per model. Never infer a wire API from a model
 name globally.
 
-Automatic curation is additive and conservative. It preserves existing and
-hand-edited entries, never prunes a temporarily missing ID, and keeps the last
-usable catalog on discovery failure. Publication writes gateway routes before
-the picker catalog. A durable pending marker survives interruption, and the
-supervisor performs one coordinated local stack restart when publication is
-needed. Codex Desktop itself must be fully restarted to reread the picker.
+Automatic curation is conservative. A successfully parsed snapshot for an
+opted-in trusted provider reconciles only its `autoCurated: true` overlay
+entries; existing manual and checked-in registry entries remain untouched.
+Discovery failure preserves the last usable catalog. Publication writes gateway
+routes before the picker catalog. A durable pending marker survives
+interruption, and the supervisor performs one coordinated local stack restart
+when publication is needed. While it is running, it watches only that
+provider's saved credential and endpoint files for a debounced immediate
+discovery; it never watches generated catalog/overlay state, avoiding a
+self-triggered loop. Codex Desktop itself must be fully restarted to reread
+the picker.
 
 The deterministic `--models` form is additive so adding one model cannot
 discard other curated entries or their hand-tuned metadata. Non-interactive
