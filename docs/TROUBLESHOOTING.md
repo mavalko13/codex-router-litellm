@@ -323,10 +323,7 @@ Manual rollback is:
 ```
 
 Updates refuse edits to tracked files, non-`main` development branches, and
-unknown origin URLs rather than overwriting local work. A public beta test is
-installed or refreshed through the bootstrap installer with `-Branch beta` on
-Windows or `--branch beta` on macOS/Linux; the ordinary in-checkout updater
-intentionally returns to the stable `main` channel. Untracked files never
+unknown origin URLs rather than overwriting local work. Untracked files never
 block an update; the refusal names the tracked files that do, and re-running the
 same command with `--force` discards those edits without deleting anything
 untracked.
