@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-11
+
 - **Subagent model references now follow the live catalog safely.** A catalog
   refresh validates `agents.default_subagent_model` and explicit models in
   Codex role files. When a removed routed slug has one unambiguous successor on
