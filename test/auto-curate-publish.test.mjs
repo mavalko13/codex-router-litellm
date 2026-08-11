@@ -63,6 +63,9 @@ test("a fresh process publishes an auto-curated overlay to routes and picker cat
   const upstream = "unknown-live-added-process-boundary";
   const slug = `example-litellm/${upstream}`;
   const gateway = `example-litellm-${upstream}`;
+  const staleUpstream = "stale-auto-route-process-boundary";
+  const staleSlug = `example-litellm/${staleUpstream}`;
+  const staleGateway = `example-litellm-${staleUpstream}`;
 
   try {
     writeFileSync(
@@ -89,6 +92,30 @@ test("a fresh process publishes an auto-curated overlay to routes and picker cat
       "restricted-test-key-never-sent\n",
       { mode: 0o600 },
     );
+    writeFileSync(
+      path.join(stateDir, "user-models.json"),
+      `${JSON.stringify({
+        version: 1,
+        models: [{
+          slug: staleSlug,
+          gatewayModel: staleGateway,
+          upstreamModel: staleUpstream,
+          provider: "example-litellm",
+          listed: true,
+          displayName: "stale auto model",
+          description: "fixture stale auto model",
+          priority: 100,
+          defaultEffort: "high",
+          reasoningLevels: [{ effort: "high", description: "Adaptive reasoning" }],
+          contextWindow: 131072,
+          autoCompact: 110000,
+          inputModalities: ["text"],
+          compHash: "fixture-stale-auto",
+          autoCurated: true,
+        }],
+      })}\n`,
+      { mode: 0o600 },
+    );
 
     // Process A represents discovery committing the durable marker and the
     // additive overlay under one transaction.
@@ -103,7 +130,9 @@ test("a fresh process publishes an auto-curated overlay to routes and picker cat
     // Process B must import the registry after A exits; this is the ESM-cache
     // boundary the startup preflight relies on.
     runModule('import { writeLiteLlmConfig } from "./src/litellm-config.mjs";writeLiteLlmConfig();', env);
-    assert.match(readFileSync(path.join(stateDir, "litellm.yaml"), "utf8"), new RegExp(gateway));
+    const litellm = readFileSync(path.join(stateDir, "litellm.yaml"), "utf8");
+    assert.match(litellm, new RegExp(gateway));
+    assert.doesNotMatch(litellm, new RegExp(staleGateway));
 
     const catalog = spawnSync(process.execPath, [path.join(root, "src", "catalog.mjs")], {
       cwd: root,
@@ -115,6 +144,7 @@ test("a fresh process publishes an auto-curated overlay to routes and picker cat
     const published = merged.models.find((model) => model.slug === slug);
     assert.ok(published, `missing ${slug}`);
     assert.equal(published.apply_patch_tool_type, null);
+    assert.equal(merged.models.some((model) => model.slug === staleSlug), false);
   } finally {
     rmSync(rootDir, { recursive: true, force: true });
   }

@@ -313,9 +313,12 @@ unverified vision, search, reasoning-summary, or `apply_patch` capability.
 The provider's default route is Chat Completions, while the checked-in trusted
 `codex-gpt-` prefix selects Responses. Use the command above for any other
 alias that requires Responses. Existing presentation and capability edits are
-preserved; live token limits remain authoritative when present. A model missing from a later `/v1/models` response is logged but
-never pruned automatically, and a failed discovery keeps the last usable
-routes and picker catalog.
+preserved; live token limits remain authoritative when present. For this
+trusted, opted-in gateway, each successfully parsed `/v1/models` response is
+authoritative for auto-curated overlay entries: IDs it no longer advertises are
+removed from that overlay. Manual entries and checked-in registry models are
+preserved, and a failed or invalid discovery keeps the last usable routes and
+picker catalog.
 
 When discovery adds a model, the supervised local router stack restarts once
 to rebuild and publish gateway routes before the picker catalog. A durable
@@ -325,6 +328,12 @@ reopen Codex to see newly discovered models. Set
 `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0` to disable periodic checks, or set an
 integer of at least `60000` milliseconds to change the interval. Startup
 discovery and manual `curate-models` remain available.
+
+While the supervised router is running, a saved `litellm-gateway` virtual-key
+or endpoint change also schedules one debounced immediate discovery. The
+watcher ignores all other local state, so catalog publication cannot trigger
+itself; if filesystem watching is unavailable, the current service and catalog
+stay in place and the periodic check remains the fallback.
 
 ### opencode (Go subscription and Zen)
 

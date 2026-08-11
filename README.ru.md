@@ -135,9 +135,12 @@ metadata: только text input, context window 131072, effort `high`, без
 ```
 
 Для обратного переключения используйте `--api-surface chat-completions`.
-Существующие записи и ручные правки сохраняются. Исчезнувшая из `/v1/models`
-модель автоматически не удаляется, а ошибка discovery оставляет последние
-рабочие routes и picker catalog.
+Существующие записи и ручные правки сохраняются. Для этого доверенного
+opt-in gateway каждый успешно разобранный ответ `/v1/models` считается
+authoritative только для auto-curated overlay: отсутствующие в нём ID из этого
+overlay удаляются. Ручные записи и checked-in registry models сохраняются, а
+ошибка или невалидный ответ discovery оставляет последние рабочие routes и
+picker catalog.
 
 После добавления модели перезапускается только локальный router stack: сначала
 публикуются gateway routes, затем picker catalog. Durable pending marker
@@ -147,6 +150,12 @@ picker только при запуске, поэтому для появлен�
 `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое значение должно быть целым
 числом не меньше `60000` мс. Startup discovery и ручной `curate-models`
 остаются доступны.
+
+Пока supervised router работает, изменение сохранённого virtual key или
+endpoint `litellm-gateway` запускает один немедленный discovery после debounce.
+Watcher игнорирует остальные локальные state files, поэтому публикация catalog
+не может запустить его повторно. Если filesystem watch недоступен, текущие
+service и catalog сохраняются, а periodic check остаётся fallback.
 
 При одном `litellm-gateway` служба публикует `merged-models.json` без
 локального LiteLLM bridge; при добавлении других routed providers сначала
