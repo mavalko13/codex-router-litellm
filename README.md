@@ -51,6 +51,23 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
 
+### Testing the public beta
+
+`main` remains the normal install channel. To test an upcoming public release
+on a separate test computer before it is promoted to `main`, download the
+installer from `beta` and explicitly select that channel:
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
+```
+
+The installer accepts only `main` (the default) and `beta`. A beta test never
+embeds a gateway URL or key; it asks for both locally. While testing beta,
+rerun this same command to update it — the normal in-checkout updater follows
+`main` by design.
+
 These quick-install commands select only **Your LiteLLM Gateway**, then ask the
 user to enter their own OpenAI-compatible URL visibly and restricted virtual
 key through a hidden prompt. No operator endpoint or key is embedded in the

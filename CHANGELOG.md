@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Public beta builds can now be installed deliberately for Windows testing.**
+  The bootstrap installers accept only the explicit `main` (default) and
+  `beta` channels, clone or safely switch the managed checkout to that channel,
+  and keep the LiteLLM Gateway URL and virtual key interactive and local. This
+  makes a pre-release test possible without making an arbitrary Git reference
+  executable or promoting the build to `main`.
+
 - **An exclusive LiteLLM Gateway install no longer requires a local Python
   proxy.** Trusted gateways that explicitly advertise direct Responses support
   receive Codex requests through the protected credential forwarder, avoiding
