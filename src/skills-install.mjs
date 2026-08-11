@@ -269,6 +269,8 @@ function sameDirContent(source, target, root = true) {
         if (!sameDirContent(sourcePath, targetPath, false)) return false;
       } else if (a.isFile() || b.isFile()) {
         if (!a.isFile() || !b.isFile()) return false;
+        // codeql[js/file-system-race]: This is a read-only freshness comparison. A
+        // concurrent change can only make the pack appear stale; it grants no ownership.
         if (!readFileSync(sourcePath).equals(readFileSync(targetPath))) return false;
       } else {
         return false;

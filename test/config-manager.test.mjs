@@ -70,8 +70,11 @@ function run(
 ) {
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const callerSecretPath = path.join(stateDir, "caller-secret");
-  if (!existsSync(callerSecretPath)) {
-    writeFileSync(callerSecretPath, `${CALLER_KEY}\n`, { mode: 0o600 });
+  try {
+    writeFileSync(callerSecretPath, `${CALLER_KEY}\n`, { mode: 0o600, flag: "wx" });
+  } catch (error) {
+    // The fixture may invoke this helper more than once for one state directory.
+    if (error?.code !== "EEXIST") throw error;
   }
   return JSON.parse(
     execFileSync(process.execPath, [manager, command, ...commandArgs], {

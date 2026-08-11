@@ -723,6 +723,8 @@ async function relayEncryptedAgentPayload(request, item, encrypted, signal) {
     ],
     tool_choice: { type: "function", name: AGENT_PAYLOAD_RELAY_TOOL },
   };
+  // codeql[js/file-access-to-http]: nativeTarget uses the configured local/native
+  // OpenAI endpoint; its Authorization value is private router state.
   const upstream = await fetch(nativeTarget("/responses", ""), {
     method: "POST",
     headers: { ...nativeHeaders(request), Accept: "text/event-stream" },
@@ -1231,6 +1233,8 @@ async function summarize(request, payload, route, signal) {
   // Compaction re-enters the same provider as the routed turn; Fireworks
   // rejects this OpenAI search parameter at that boundary too.
   if (providerForModel(route)?.id === "fireworks") delete body.web_search_options;
+  // codeql[js/file-access-to-http]: route selection is registry-controlled and
+  // targets only the local LiteLLM bridge or configured API forwarder.
   const upstream = await fetch(routedTargetForRoute(route), {
     method: "POST",
     headers: routedHeaders(),
@@ -1877,8 +1881,10 @@ const server = http.createServer((request, response) => {
     // bodies never do, so only the error's own message and code are recorded.
     console.error(
       `[codex-router] request failed: ${
-        error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      }${error?.code ? ` (${error.code})` : ""}`,
+        error instanceof Error
+          ? `${String(error.name).replace(/[\r\n]+/g, " ")}: ${String(error.message).replace(/[\r\n]+/g, " ")}`
+          : String(error).replace(/[\r\n]+/g, " ")
+      }${error?.code ? ` (${String(error.code).replace(/[\r\n]+/g, " ")})` : ""}`,
     );
     if (!response.headersSent) {
       writeJson(response, status, {
