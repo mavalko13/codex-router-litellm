@@ -79,9 +79,6 @@ const NATIVE_BASE = (
   process.env.CODEX_NATIVE_BASE_URL || "https://chatgpt.com/backend-api/codex"
 ).replace(/\/+$/, "");
 
-function sanitizeLogField(value) {
-  return String(value).replace(/[\r\n]+/g, " ");
-}
 const GATEWAY_BASE = (
   process.env.CODEX_ROUTER_GATEWAY_BASE_URL ||
   process.env.KIMI_GATEWAY_BASE_URL ||
@@ -1880,16 +1877,10 @@ async function handleRequest(request, response) {
 const server = http.createServer((request, response) => {
   handleRequest(request, response).catch((error) => {
     const status = httpErrorStatus(error);
-    // The bare string this used to log made every mid-stream failure
-    // indistinguishable in production. The cause belongs in the log; response
-    // bodies never do, so only the error's own message and code are recorded.
-    console.error(
-      `[codex-router] request failed: ${
-        error instanceof Error
-          ? `${sanitizeLogField(error.name)}: ${sanitizeLogField(error.message)}`
-          : sanitizeLogField(error)
-      }${error?.code ? ` (${sanitizeLogField(error.code)})` : ""}`,
-    );
+    // Keep the log sink free of upstream/user-controlled text. The response is
+    // generic below, and detailed upstream failures are handled at narrower
+    // translation boundaries before they reach this catch-all path.
+    console.error(`[codex-router] request failed with status ${status}`);
     if (!response.headersSent) {
       writeJson(response, status, {
         error: {

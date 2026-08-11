@@ -135,12 +135,11 @@ function failingSseUpstream(message) {
 // `.pipe()` forwards neither errors nor destroy, so an upstream body that
 // failed mid-stream left the response half-written and open; the router then
 // reset the socket, and the client saw only a transport decode failure with no
-// cause. `pipeline` must surface the error with its message so the router can
-// log it, and must leave the response endable so the chunked body terminates.
+// cause. `pipeline` must surface the error for classification and metering,
+// and must leave the response endable so the chunked body terminates.
 test("an upstream body that fails mid-stream ends the chunked body instead of resetting", async () => {
   let pipeError;
   let headersCommitted;
-  const logged = [];
   const transform = new Transform({
     transform(chunk, _encoding, callback) {
       callback(null, chunk);
@@ -160,13 +159,8 @@ test("an upstream body that fails mid-stream ends the chunked body instead of re
       // The router keys its meter off this: an upstream failure after the
       // head was committed must record an abort, not the committed 200.
       headersCommitted = response.headersSent;
-      // The router's top-level handler: log the cause, then terminate the
-      // stream gracefully rather than destroying the socket.
-      logged.push(
-        `[codex-router] request failed: ${
-          error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-        }`,
-      );
+      // The router's top-level handler terminates the stream gracefully rather
+      // than destroying the socket.
       endStreamedResponse(response);
     }
   });
@@ -182,10 +176,6 @@ test("an upstream body that fails mid-stream ends the chunked body instead of re
     true,
     "the failure surfaced after the 200 head was already committed",
   );
-  // The message is what made this diagnosable at all; the old handler logged a
-  // bare string with no error attached.
-  assert.deepEqual(logged, ["[codex-router] request failed: Error: upstream exploded"]);
-
   assert.equal(result.aborted, false, "the socket was reset instead of ending the body");
   assert.equal(result.complete, true, "the chunked body never reached its terminator");
   assert.match(result.body, /data: first/);
