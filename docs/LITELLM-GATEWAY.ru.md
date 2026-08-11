@@ -148,11 +148,12 @@ Discovery видит только те модели, которые возвра
 
 Новые ID добавляются в защищённый `user-models.json` с defaults: только text,
 context 131072, effort `high`, без неподтверждённых vision, search, reasoning
-summary и `apply_patch`. Существующие записи и ручные правки presentation/capabilities
-сохраняются; валидные live token limits имеют приоритет только для размеров окна.
-Исчезнувший ID только записывается в лог и автоматически не удаляется: причиной
-может быть временный ACL или неполный catalog response. Ошибка discovery или
-публикации оставляет последние рабочие routes и picker catalog.
+summary и `apply_patch`. Для этого доверенного opt-in provider успешно
+разобранный live `/models` snapshot authoritative только для записей с
+`autoCurated: true`: отсутствующие ID удаляются из local overlay. Ручные записи
+и checked-in registry models сохраняются; валидные live token limits имеют
+приоритет только для размеров окна. Ошибка discovery/публикации, non-2xx или
+невалидный model list оставляет последние рабочие routes и picker catalog.
 
 После добавления ID supervisor перезапускает только локальный router stack и
 публикует сначала gateway routes, затем picker catalog. Если процесс оборвался,
@@ -161,6 +162,13 @@ durable pending marker повторит его при следующем ста�
 опрос отключается через `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое
 значение должно быть целым числом не меньше `60000` мс. Startup discovery и
 ручной curate остаются доступны.
+
+Изменение сохранённого файла virtual key или сохранённого gateway endpoint во
+время работы supervisor запускает один немедленный discovery после debounce, а
+при изменении catalog использует обычный pending-marker/restart путь
+публикации. Watcher фильтрует только эти два файла; недоступный или ошибочный
+filesystem watcher не меняет работающие service и catalog, а periodic discovery
+остаётся fallback.
 
 ## Обновление, rollback и ветки
 

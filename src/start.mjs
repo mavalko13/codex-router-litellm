@@ -9,12 +9,14 @@ import {
   clearAutoCurateRefreshPending,
   periodicAutoCurateAction,
 } from "./auto-curate-state.mjs";
+import { startAutoCurateStateWatcher } from "./auto-curate-watch.mjs";
 import {
   CALLER_SECRET_PATH,
   INTERNAL_SECRET_PATH,
   LITELLM_CONFIG_PATH,
   MERGED_CATALOG_PATH,
   PORTS,
+  PROVIDER_ENDPOINTS_PATH,
   SOURCE_ROOT,
   STATE_DIR,
   TARGET,
@@ -180,6 +182,8 @@ let shuttingDown = false;
 let restartRequested = false;
 let autoCurateTimer;
 let autoCurateChild;
+let autoCurateWatcher;
+let watcherAutoCurateQueued = false;
 
 function run(command, args, extraEnv = {}) {
   const child = spawn(command, args, {
@@ -218,6 +222,7 @@ function stopChildren() {
   if (shuttingDown) return;
   shuttingDown = true;
   if (autoCurateTimer) clearInterval(autoCurateTimer);
+  autoCurateWatcher?.();
   if (
     autoCurateChild &&
     autoCurateChild.exitCode === null &&
@@ -235,8 +240,12 @@ function stopChildren() {
   }, 3_000).unref();
 }
 
-function runPeriodicAutoCurate() {
-  if (shuttingDown || autoCurateChild) return;
+function runPeriodicAutoCurate(source = "periodic") {
+  if (shuttingDown) return;
+  if (autoCurateChild) {
+    if (source === "watcher") watcherAutoCurateQueued = true;
+    return;
+  }
   const child = spawn(process.execPath, [AUTO_CURATE_SCRIPT], {
     cwd: SOURCE_ROOT,
     env: process.env,
@@ -272,15 +281,27 @@ function runPeriodicAutoCurate() {
     const action = periodicAutoCurateAction({ summary, pending });
     if (action === "failed") {
       console.error(
-        "[model-router] periodic automatic model discovery failed; keeping the existing catalog",
+        `[model-router] ${source} automatic model discovery failed; keeping the existing catalog`,
       );
+      if (watcherAutoCurateQueued) {
+        watcherAutoCurateQueued = false;
+        runPeriodicAutoCurate("watcher");
+      }
       return;
     }
-    if (action === "idle") return;
+    if (action === "idle") {
+      if (watcherAutoCurateQueued) {
+        watcherAutoCurateQueued = false;
+        runPeriodicAutoCurate("watcher");
+      }
+      return;
+    }
     restartRequested = true;
+    const added = summary?.added || 0;
+    const removed = summary?.removed || 0;
     const metadataNote = summary?.metadataChanged ? " and live metadata changes" : "";
     console.error(
-      `[model-router] ${summary?.added || 0} new model(s)${metadataNote} await publication; restarting the local router stack to publish routes and catalog`,
+      `[model-router] catalog changes (added ${added}, removed ${removed}${metadataNote}) await publication; restarting the local router stack to publish routes and catalog`,
     );
     stopChildren();
   });
@@ -291,6 +312,24 @@ function startPeriodicAutoCurate() {
   if (intervalMs === 0) return;
   autoCurateTimer = setInterval(runPeriodicAutoCurate, intervalMs);
   autoCurateTimer.unref();
+}
+
+function startLiteLlmGatewayStateWatcher() {
+  autoCurateWatcher = startAutoCurateStateWatcher({
+    stateDir: STATE_DIR,
+    endpointFileName: path.basename(PROVIDER_ENDPOINTS_PATH),
+    onChange: () => {
+      console.error(
+        "[model-router] saved LiteLLM gateway credential or endpoint changed; checking the live model catalog",
+      );
+      runPeriodicAutoCurate("watcher");
+    },
+    onError: () => {
+      console.error(
+        "[model-router] LiteLLM gateway state watcher is unavailable; periodic automatic discovery remains active",
+      );
+    },
+  });
 }
 
 const FRONTEND = { script: "router.mjs", service: "codex-router", label: "Codex router" };
@@ -349,6 +388,7 @@ async function main() {
 
   console.error(`[${frontendService}] ready (authenticated loopback endpoint)`);
   startPeriodicAutoCurate();
+  startLiteLlmGatewayStateWatcher();
   const result = await Promise.race([
     waitForExit(kimiForwarder, "OAuth forwarder"),
     waitForExit(api, "API forwarder"),
