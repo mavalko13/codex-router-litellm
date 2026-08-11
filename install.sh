@@ -15,6 +15,7 @@ no_tray=false
 previous_revision=
 force=false
 target=codex
+branch=main
 
 usage() {
   cat <<'EOF'
@@ -25,6 +26,7 @@ Install external model routes for Codex.
 Options:
   --install-dir PATH  Stable checkout used by the background service
   --target APP        Install for "codex" (the default and only target)
+  --branch CHANNEL    Install public release channel "main" (default) or "beta"
   --prepare-only      Install dependencies without changing either app
   --api-key           Alias for --kimi-api-key
   --kimi-api-key      Prompt securely for a Kimi Platform API key
@@ -96,6 +98,11 @@ while [ "$#" -gt 0 ]; do
     --target)
       [ "$#" -ge 2 ] || die "--target requires codex"
       target=$2
+      shift 2
+      ;;
+    --branch)
+      [ "$#" -ge 2 ] || die "--branch requires main or beta"
+      branch=$2
       shift 2
       ;;
     --install-dir)
@@ -175,6 +182,10 @@ case "$target" in
   codex) ;;
   *) die "--target must be codex" ;;
 esac
+case "$branch" in
+  main|beta) ;;
+  *) die "--branch must be main or beta" ;;
+esac
 if [ "$target" != codex ] && [ "$migrate_known" = true ]; then
   die "--migrate-known applies only to the Codex target"
 fi
@@ -222,18 +233,25 @@ if [ -z "$repo_dir" ]; then
         die "unable to discard the local changes in $install_dir"
     fi
     current_branch=$(git -C "$install_dir" branch --show-current)
-    [ "$current_branch" = "main" ] ||
-      die "$install_dir must be on its main branch before updating"
+    if [ "$current_branch" != "$branch" ]; then
+      # A shallow beta checkout has no local main branch, and a recovery can
+      # leave HEAD detached.  The tracked-edit guard has already passed, so it
+      # is safe to attach/reset only the explicitly allowlisted release branch.
+      git -C "$install_dir" fetch --quiet --depth 1 origin "$branch" ||
+        die "unable to fetch requested $branch branch"
+      git -C "$install_dir" checkout --quiet -B "$branch" "origin/$branch" ||
+        die "unable to switch to requested $branch branch"
+    fi
     printf 'Updating %s...\n' "$install_dir"
     previous_revision=$(git -C "$install_dir" rev-parse HEAD)
     git -C "$install_dir" update-ref refs/codex-router/rollback "$previous_revision"
-    git -C "$install_dir" pull --ff-only origin main
+    git -C "$install_dir" pull --ff-only origin "$branch"
   elif [ -e "$install_dir" ]; then
     die "$install_dir already exists and is not a codex-router checkout"
   else
     mkdir -p "$(dirname -- "$install_dir")"
     printf 'Cloning codex-router to %s...\n' "$install_dir"
-    git clone --depth 1 "$repository_url" "$install_dir"
+    git clone --depth 1 --branch "$branch" "$repository_url" "$install_dir"
   fi
   repo_dir=$install_dir
 fi

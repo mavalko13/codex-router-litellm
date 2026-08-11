@@ -47,6 +47,23 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
 
+### Тестирование публичной beta
+
+`main` остаётся обычным каналом установки. Чтобы проверить следующий публичный
+релиз на отдельном тестовом компьютере до перевода в `main`, загрузите
+установщик из `beta` и явно выберите этот канал:
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
+```
+
+Установщик принимает только `main` (по умолчанию) и `beta`. Адрес gateway и
+ключ не зашиваются в beta: оба значения вводятся локально. Во время beta-теста
+для обновления повторяйте эту же команду: обычный updater внутри checkout
+намеренно следует за `main`.
+
 Требования:
 
 - установленный Codex App или Codex CLI;

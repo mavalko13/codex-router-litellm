@@ -110,6 +110,24 @@ test("install.sh is valid POSIX shell", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("bootstrap installers allow only the explicit public main and beta channels", () => {
+  const posix = readScript("install.sh");
+  const windows = readScript("install.ps1");
+
+  assert.match(posix, /^branch=main$/m);
+  assert.match(posix, /--branch\)\n\s+\[ "\$#" -ge 2 \] \|\| die "--branch requires main or beta"/);
+  assert.match(posix, /case "\$branch" in\n\s+main\|beta\)/);
+  assert.match(posix, /git clone --depth 1 --branch "\$branch"/);
+  assert.match(posix, /git -C "\$install_dir" fetch --quiet --depth 1 origin "\$branch"/);
+  assert.match(posix, /git -C "\$install_dir" pull --ff-only origin "\$branch"/);
+
+  assert.match(windows, /\[ValidateSet\("main", "beta"\)\]\s*\[string\]\$Branch = "main"/);
+  assert.match(windows, /git -C \$InstallDir fetch --quiet --depth 1 origin \$Branch/);
+  assert.match(windows, /git -C \$InstallDir checkout --quiet -B \$Branch "origin\/\$Branch"/);
+  assert.match(windows, /git -C \$InstallDir pull --ff-only origin \$Branch/);
+  assert.match(windows, /git clone --depth 1 --branch \$Branch \$RepositoryUrl \$InstallDir/);
+});
+
 test("refresh-catalog publishes auto-curated routes before the picker", () => {
   const source = readScript("bin", "refresh-catalog");
   const autoCurate = source.indexOf("node src/auto-curate-models.mjs");
@@ -159,18 +177,18 @@ test("both installers keep the update when setup reports exit 2", () => {
   assert.match(windows, /switch --quiet --detach \$PreviousRevision/);
 });
 
-test("Windows bootstrap does not turn successful Git switch notices into errors", () => {
+test("Windows bootstrap does not turn successful Git branch notices into errors", () => {
   const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
-  const switchCommands = windows
+  const branchCommands = windows
     .split(/\r?\n/)
-    .filter((line) => /& git -C .* switch /.test(line));
+    .filter((line) => /& git -C .* (?:switch|checkout) /.test(line));
 
-  assert.equal(switchCommands.length, 3);
-  for (const command of switchCommands) {
-    assert.match(command, /switch --quiet /);
+  assert.equal(branchCommands.length, 3);
+  for (const command of branchCommands) {
+    assert.match(command, /(?:switch|checkout) --quiet /);
     assert.doesNotMatch(command, /2>\$null/);
   }
-  assert.match(windows, /switch --quiet main\s+if \(\$LASTEXITCODE -ne 0\)/);
+  assert.match(windows, /checkout --quiet -B \$Branch "origin\/\$Branch"\s+if \(\$LASTEXITCODE -ne 0\)/);
 });
 
 test("Windows bootstraps runtime dependencies before importing setup", () => {
