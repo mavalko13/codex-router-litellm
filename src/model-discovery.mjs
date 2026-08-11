@@ -134,9 +134,10 @@ async function providerPayload(provider, options = {}) {
     };
   }
   const fetchImpl = options.fetchImpl || fetch;
-  // codeql[js/file-access-to-http]: baseUrl and the credential come from the
-  // validated registry plus protected operator settings, not discovery payloads.
+  // baseUrl and the credential come from the validated registry plus protected
+  // operator settings, not discovery payloads.
   const response = await fetchImpl(`${baseUrl}/models`, {
+    // codeql[js/file-access-to-http]
     headers,
     signal: AbortSignal.timeout(timeoutMs),
   });

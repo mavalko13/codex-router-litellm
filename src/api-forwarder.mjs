@@ -705,10 +705,11 @@ async function handleRequest(request, response) {
     : normalized.body;
   let session = await upstreamSession(normalized.provider, credential, normalized.payload);
   let target = `${session.baseUrl}${route}${requestUrl.search}`;
-  // codeql[js/file-access-to-http]: session.baseUrl and apiKey are resolved
-  // from validated provider definitions and protected local credentials, not a request URL.
+  // session.baseUrl and apiKey are resolved from validated provider definitions
+  // and protected local credentials, not a request URL.
   let upstream = await fetch(target, {
     method: request.method,
+    // codeql[js/file-access-to-http]
     headers: upstreamHeaders(
       request.headers,
       upstreamBody,
@@ -730,9 +731,9 @@ async function handleRequest(request, response) {
       { force: true },
     );
     target = `${session.baseUrl}${route}${requestUrl.search}`;
-    // codeql[js/file-access-to-http]: see the first provider request above.
     upstream = await fetch(target, {
       method: request.method,
+      // codeql[js/file-access-to-http]
       headers: upstreamHeaders(
         request.headers,
         upstreamBody,

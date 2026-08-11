@@ -222,10 +222,11 @@ export function githubCopilotQuotaMetrics(payload) {
 }
 
 async function requestJson(url, key, headers = {}, fetchImpl = fetch) {
-  // codeql[js/file-access-to-http]: callers use fixed official billing URLs or
-  // a host-allowlisted provider endpoint with a protected local credential.
+  // Callers use fixed official billing URLs or a host-allowlisted provider
+  // endpoint with a protected local credential.
   const response = await fetchImpl(url, {
     method: "GET",
+    // codeql[js/file-access-to-http]
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${key}`,
