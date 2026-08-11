@@ -78,6 +78,10 @@ const LISTEN_PORT = Number(
 const NATIVE_BASE = (
   process.env.CODEX_NATIVE_BASE_URL || "https://chatgpt.com/backend-api/codex"
 ).replace(/\/+$/, "");
+
+function sanitizeLogField(value) {
+  return String(value).replace(/[\r\n]+/g, " ");
+}
 const GATEWAY_BASE = (
   process.env.CODEX_ROUTER_GATEWAY_BASE_URL ||
   process.env.KIMI_GATEWAY_BASE_URL ||
@@ -1882,9 +1886,9 @@ const server = http.createServer((request, response) => {
     console.error(
       `[codex-router] request failed: ${
         error instanceof Error
-          ? `${String(error.name).replace(/[\r\n]+/g, " ")}: ${String(error.message).replace(/[\r\n]+/g, " ")}`
-          : String(error).replace(/[\r\n]+/g, " ")
-      }${error?.code ? ` (${String(error.code).replace(/[\r\n]+/g, " ")})` : ""}`,
+          ? `${sanitizeLogField(error.name)}: ${sanitizeLogField(error.message)}`
+          : sanitizeLogField(error)
+      }${error?.code ? ` (${sanitizeLogField(error.code)})` : ""}`,
     );
     if (!response.headersSent) {
       writeJson(response, status, {
