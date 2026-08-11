@@ -554,7 +554,14 @@ test("fixture drives discovery through fresh registry, LiteLLM, and both forward
         registryModels: [],
         configured: () => [provider.id],
         selected: () => [provider.id],
-        discover: async () => ({ discovered: [], unavailable: [] }),
+        // A successfully parsed live snapshot is authoritative for automatic
+        // entries. Keep the fixture's advertised ids while exercising the
+        // legacy apiSurface migration; an empty successful snapshot would
+        // correctly prune every auto-curated model before publication.
+        discover: async () => ({
+          discovered: ${JSON.stringify(fixture.data.map(({ id }) => id))},
+          unavailable: [],
+        }),
       });
     `], { cwd: root, env, encoding: "utf8" });
     assert.equal(migration.status, 0, migration.stderr);
