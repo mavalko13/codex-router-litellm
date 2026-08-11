@@ -441,10 +441,12 @@ test("routed request flattens every namespace to the gateway and restores calls 
     outgoing.tools.every((tool) => tool?.type !== "namespace"),
     "no namespace entries reach the gateway",
   );
-  // The merged codex_app tool definitions keep their schema.
+  // The merged codex_app tool definitions keep their schema while the routed
+  // OpenAI boundary uses the Responses API `parameters` spelling.
   const createThread = outgoing.tools.find((tool) => tool.name === "codex_app__create_thread");
-  assert.ok(createThread?.inputSchema, "create_thread schema survives the relay");
-  assert.equal(createThread.inputSchema.type, "object");
+  assert.ok(createThread?.parameters, "create_thread schema survives the relay");
+  assert.equal(createThread.parameters.type, "object");
+  assert.equal(createThread.inputSchema, undefined);
 
   // Stored namespaced calls in the input history are renamed to match the
   // flattened tool list the model sees.

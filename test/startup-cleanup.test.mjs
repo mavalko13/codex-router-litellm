@@ -161,7 +161,7 @@ test("startup failure terminates services that already became healthy", { timeou
   }
 });
 
-test("startup skips local LiteLLM with an exclusive litellm-gateway Chat model selection", { timeout: 120_000 }, async () => {
+test("startup skips local LiteLLM with an exclusive litellm-gateway Responses model selection", { timeout: 120_000 }, async () => {
   const ports = await Promise.all(Array.from({ length: 5 }, () => freePort()));
   assert.equal(new Set(ports).size, ports.length);
   const [routerPort, gatewayPort, oauthPort, apiPort, grokOauthPort] = ports;
@@ -184,21 +184,21 @@ test("startup skips local LiteLLM with an exclusive litellm-gateway Chat model s
       version: 1,
       models: [
         {
-          slug: "litellm-gateway/ollama-cloud-kimi-k2-7-code",
-          gatewayModel: "litellm-gateway-ollama-cloud-kimi-k2-7-code",
-          upstreamModel: "ollama-cloud-kimi-k2-7-code",
+          slug: "litellm-gateway/codex-gpt-5.6-luna",
+          gatewayModel: "litellm-gateway-codex-gpt-5-6-luna",
+          upstreamModel: "codex-gpt-5.6-luna",
           provider: "litellm-gateway",
           listed: true,
-          apiSurface: "chat-completions",
-          displayName: "Kimi Code",
-          description: "External LiteLLM gateway Chat model.",
+          apiSurface: "responses",
+          displayName: "Codex GPT 5.6 Luna",
+          description: "External LiteLLM gateway Responses model.",
           priority: 1,
           defaultEffort: "high",
           reasoningLevels: [{ effort: "high", description: "Adaptive reasoning" }],
           contextWindow: 131072,
           autoCompact: 110000,
           inputModalities: ["text"],
-          compHash: "litellm-gateway-ollama-cloud-kimi-k2-7-code-test",
+          compHash: "litellm-gateway-codex-gpt-5-6-luna-test",
         },
       ],
     })}\n`,
