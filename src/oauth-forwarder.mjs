@@ -146,10 +146,11 @@ function tokenHealth() {
 }
 
 async function requestUpstream(request, target, body, token, signal) {
-  // codeql[js/file-access-to-http]: target is the fixed Kimi OAuth endpoint and
-  // token is read from the protected local OAuth credential store.
+  // target is the fixed Kimi OAuth endpoint and token is read from the
+  // protected local OAuth credential store.
   return fetch(target, {
     method: request.method,
+    // codeql[js/file-access-to-http]
     headers: {
       ...upstreamHeaders(request.headers, body),
       Authorization: `Bearer ${token}`,

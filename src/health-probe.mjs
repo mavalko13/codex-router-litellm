@@ -92,9 +92,10 @@ export async function waitForHealth({
         // path, and a manual controller here crashed Node on Windows -- a libuv
         // assertion in win/async.c, killing startup with 0xC0000409 while it was
         // reporting a failure it had already diagnosed correctly.
-        // codeql[js/file-access-to-http]: url is the local child-service health
-        // endpoint assembled by the supervisor, never client-supplied input.
+        // url is the local child-service health endpoint assembled by the
+        // supervisor, never client-supplied input.
         const response = await fetchImpl(url, {
+          // codeql[js/file-access-to-http]
           headers,
           signal: AbortSignal.timeout(windowMs),
         });

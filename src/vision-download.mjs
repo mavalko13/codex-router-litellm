@@ -38,8 +38,9 @@ export function writeVisionDownload(state) {
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   chmodSync(stateDir, 0o700);
   const temporary = `${VISION_DOWNLOAD_STATE_PATH}.tmp.${process.pid}`;
-  // codeql[js/http-to-file-access]: state is compact progress metadata from the
-  // local Ollama daemon and is written only to this mode-0600 private state file.
+  // State is compact progress metadata from the local Ollama daemon and is
+  // written only to this mode-0600 private state file.
+  // codeql[js/http-to-file-access]
   writeFileSync(temporary, `${JSON.stringify(state)}\n`, {
     encoding: "utf8",
     mode: 0o600,

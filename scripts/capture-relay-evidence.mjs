@@ -150,9 +150,10 @@ if (response.status !== 200) {
   console.error(errors);
   process.exit(1);
 }
-// codeql[js/http-to-file-access]: this operator-invoked diagnostic intentionally
-// captures the local test router response in the explicit output directory.
+// This operator-invoked diagnostic intentionally captures the local test router
+// response in the explicit output directory.
 writeFileSync(path.join(OUT_DIR, "relay-out.json"), `${JSON.stringify(outgoing, null, 2)}\n`);
+// codeql[js/http-to-file-access]
 writeFileSync(path.join(OUT_DIR, "relay-in.json"), `${clientBody}\n`);
 console.log(`wrote ${OUT_DIR}/relay-out.json (${JSON.stringify(outgoing).length} bytes) and relay-in.json (${clientBody.length} bytes)`);
 child.kill("SIGTERM");

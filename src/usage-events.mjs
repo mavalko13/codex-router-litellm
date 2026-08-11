@@ -71,8 +71,9 @@ export function recordUsageEvent({
   };
   try {
     mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-    // codeql[js/http-to-file-access]: this is intentionally bounded telemetry
-    // metadata, persisted only under the router's private mode-0600 state directory.
+    // This is intentionally bounded telemetry metadata, persisted only under
+    // the router's private mode-0600 state directory.
+    // codeql[js/http-to-file-access]
     appendFileSync(USAGE_EVENTS_PATH, `${JSON.stringify(event)}\n`, {
       encoding: "utf8",
       mode: 0o600,
