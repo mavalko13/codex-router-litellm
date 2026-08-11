@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   PYTHON_REQUIREMENTS,
@@ -16,6 +18,8 @@ import {
   localLiteLlmRequiredForProviderIds,
   localLiteLlmRequiredForSelection,
 } from "../src/local-litellm-mode.mjs";
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function checkout() {
   const root = mkdtempSync(path.join(tmpdir(), "install-plan-"));
@@ -56,6 +60,24 @@ test("a missing installation always runs its step", () => {
   try {
     assert.equal(stepStatus("node-deps", { root, platform: "darwin" }), "run");
     assert.equal(stepStatus("python-deps", { root, platform: "darwin" }), "run");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the node dependency status CLI works in a clean checkout before npm ci", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "install-plan-clean-cli-"));
+  try {
+    mkdirSync(path.join(root, "src"));
+    for (const relative of ["package.json", "package-lock.json", "src/install-plan.mjs", "src/tray-install.mjs"]) {
+      copyFileSync(path.join(projectRoot, relative), path.join(root, relative));
+    }
+    const result = spawnSync(process.execPath, ["src/install-plan.mjs", "status", "node-deps"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "run\n");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
