@@ -145,7 +145,7 @@ function readRouted(port, body) {
 // bare socket reset: `.pipe()` never forwarded the error, so the response stayed
 // half-written until the top-level handler destroyed it, and the log said only
 // "[codex-router] request failed".
-test("a gateway that dies mid-stream ends the routed body and logs only the status", async () => {
+test("a gateway that dies mid-stream ends the routed body and logs only a constant message", async () => {
   const gateway = await mockServer((request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       const payload = Buffer.from(JSON.stringify({ ok: true }), "utf8");
@@ -199,11 +199,11 @@ test("a gateway that dies mid-stream ends the routed body and logs only the stat
     // text; narrower translation paths preserve the useful client-facing
     // details before errors reach this boundary.
     const deadline = Date.now() + 2_000;
-    while (!/request failed with status /.test(router.testErrors()) && Date.now() < deadline) {
+    while (!/request failed/.test(router.testErrors()) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    assert.match(router.testErrors(), /\[codex-router\] request failed with status 502/);
-    assert.doesNotMatch(router.testErrors(), /upstream|terminated|aborted/i);
+    assert.match(router.testErrors(), /\[codex-router\] request failed/);
+    assert.doesNotMatch(router.testErrors(), /502|upstream|terminated|aborted/i);
 
     // The turn is truncated, not successful: the meter must record a failure
     // carrying the abort marker instead of the committed 200 the client
