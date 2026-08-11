@@ -77,23 +77,6 @@ The checkout includes `model-router.cmd`, which applies a one-command
 Use it for later Windows commands; changing the machine or user execution
 policy is unnecessary.
 
-### Test the public beta before release
-
-`main` is the stable installation channel. On a disposable Windows test
-computer, an upcoming **public** release can be tested from `beta` without
-promoting it to `main`:
-
-```powershell
-$installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
-```
-
-`-Branch` is intentionally restricted to `main` and `beta`; it is not a way to
-run arbitrary Git references. The beta installer keeps the gateway URL and
-virtual key interactive and local. Re-run the same command while testing beta:
-the ordinary in-checkout updater intentionally tracks `main`.
-
 Clone-and-review installation is also supported:
 
 ```sh

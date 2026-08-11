@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Public installation documentation now shows only the stable `main`
+  channel.** The regular setup path stays focused on colleagues installing the
+  released Router.
+
 ## 0.4.0 - 2026-08-11
 
 - **Direct LiteLLM Gateway forwarding now respects each model's API surface.**
