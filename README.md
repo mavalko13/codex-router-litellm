@@ -75,10 +75,11 @@ installer. To open the full provider chooser instead, omit
 `--providers litellm-gateway` on macOS/Linux or `-Providers litellm-gateway` on
 Windows.
 
-On Windows, guided setup checks Git, Node.js, and `uv`/Python before changing
-Codex. When a prerequisite is missing it offers to install the exact package
-through WinGet and continues in the same PowerShell process after explicit
-confirmation. Automatic setup never installs a system prerequisite.
+On Windows, guided setup checks Git and Node.js before changing Codex. It asks
+for `uv`/Python only after the selected providers prove that a local LiteLLM
+bridge is needed. When a prerequisite is missing it offers to install the
+exact package through WinGet and continues in the same PowerShell process after
+explicit confirmation. Automatic setup never installs a system prerequisite.
 
 The setup detects existing authentication, asks for a custom LiteLLM URL with
 visible input, prompts invisibly for provider credentials, installs a per-user

@@ -64,12 +64,13 @@ visible input and for a restricted virtual key with hidden input. Omit the
 provider argument only when you intentionally want the advanced chooser with
 all supported providers.
 
-Guided Windows setup checks Git, Node.js 22.19+, and `uv`/Python before it
-changes Codex. When one is missing and WinGet is available, it asks before
-installing the exact package (`Git.Git`, `OpenJS.NodeJS.LTS`, or
-`astral-sh.uv`), refreshes the current process PATH, and continues. It never
-installs a package manager or runtime without confirmation, and `-Auto` keeps
-missing prerequisites as a hard error.
+Guided Windows setup checks Git and Node.js 22.19+ before it changes Codex.
+It asks for `uv`/Python only after the selected providers need the local
+LiteLLM bridge. When one is missing and WinGet is available, it asks before
+installing the exact package (`Git.Git`, `OpenJS.NodeJS.LTS`, or, only for the
+bridge, `astral-sh.uv`), refreshes the current process PATH, and continues. It
+never installs a package manager or runtime without confirmation, and `-Auto`
+keeps missing prerequisites as a hard error.
 
 The checkout includes `model-router.cmd`, which applies a one-command
 `ExecutionPolicy Bypass` to the repository's signed-in-user PowerShell wrapper.
