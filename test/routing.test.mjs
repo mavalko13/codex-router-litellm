@@ -2102,6 +2102,70 @@ test("API forwarder leaves non-Gemini tool calls unsigned", async () => {
   }
 });
 
+test("API forwarder removes nameless function calls before MiniMax receives chat history", async () => {
+  const upstreamRequests = [];
+  const upstream = await mockServer(async (request, response) => {
+    upstreamRequests.push(await bodyJson(request));
+    json(response, 200, { choices: [] });
+  });
+  const forwarderPort = await openPort();
+  const forwarder = run("api-forwarder.mjs", {
+    CODEX_ROUTER_API_PORT: String(forwarderPort),
+    MINIMAX_BASE_URL: `http://127.0.0.1:${upstream.port}/v1`,
+    MINIMAX_API_KEY: "TEST_MINIMAX_API_KEY",
+    CODEX_ROUTER_QUIET: "1",
+  });
+
+  try {
+    await waitFor(`http://127.0.0.1:${forwarderPort}/health`, forwarder, {
+      Authorization: `Bearer ${INTERNAL_KEY}`,
+    });
+    const response = await fetch(`http://127.0.0.1:${forwarderPort}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${INTERNAL_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "minimax-token-plan-minimax-m3",
+        tool_choice: { type: "function", function: { name: "" } },
+        tools: [
+          { type: "function", function: { name: "read_file", parameters: { type: "object" } } },
+          { type: "function", function: { name: "", parameters: { type: "object" } } },
+          { type: "function", function: { parameters: { type: "object" } } },
+        ],
+        messages: [
+          { role: "user", content: "continue" },
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "call-valid", type: "function", function: { name: "read_file", arguments: "{}" } },
+              { id: "call-empty", type: "function", function: { name: "", arguments: "{}" } },
+              { id: "call-missing", type: "function", function: { arguments: "{}" } },
+            ],
+          },
+          { role: "tool", tool_call_id: "call-valid", content: "contents" },
+          { role: "tool", tool_call_id: "call-empty", content: "must be removed" },
+          { role: "tool", tool_call_id: "call-missing", content: "must be removed" },
+        ],
+      }),
+    });
+    assert.equal(response.status, 200, await response.text());
+    const body = upstreamRequests[0];
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["read_file"]);
+    assert.equal(body.tool_choice, undefined, "a forced blank function must not reach upstream");
+    const assistant = body.messages.find((message) => message.role === "assistant");
+    assert.deepEqual(assistant.tool_calls.map((call) => call.function.name), ["read_file"]);
+    assert.deepEqual(
+      body.messages.filter((message) => message.role === "tool").map((message) => message.tool_call_id),
+      ["call-valid"],
+    );
+  } finally {
+    await stopChild(forwarder);
+    await closeServer(upstream.server);
+  }
+});
+
 test("API forwarder replaces caller auth and enforces Kimi K3 API parameters", async () => {
   const upstreamRequests = [];
   const upstream = await mockServer(async (request, response) => {
