@@ -5,6 +5,7 @@ import path from "node:path";
 import { validCallerSecret } from "./caller-auth.mjs";
 import { codexAuthStatus, findCodexBinary } from "./codex-binary.mjs";
 import { routedCodexAgentStatus } from "./codex-agent-catalog.mjs";
+import { codexAgentModelReferenceStatus } from "./agent-model-lifecycle.mjs";
 import { privateFileIsProtected } from "./file-security.mjs";
 import { grokCliPreflight } from "./grok-cli.mjs";
 import { detectLegacyInstallations } from "./legacy-migration.mjs";
@@ -414,6 +415,15 @@ add(
       ? `${agentStatus.extra.length} definitions in ${CODEX_AGENTS_DIR} for models that are switched off as subagents`
       : `${agentStatus.current} of ${agentStatus.expected} current definitions in ${CODEX_AGENTS_DIR}`,
   "Run ./bin/doctor --fix, then fully quit Codex, reopen it, and create a new task.",
+);
+const agentModelLifecycle = codexAgentModelReferenceStatus({ availableModels: catalogModels });
+add(
+  agentModelLifecycle.unresolved.length ? "fail" : "ok",
+  "Subagent model references",
+  agentModelLifecycle.unresolved.length
+    ? agentModelLifecycle.unresolved.map(({ path: target, reference }) => `${target}: ${reference}`).join("; ")
+    : `${agentModelLifecycle.valid.length} default and role reference(s) valid`,
+  "Run ./bin/refresh-catalog (or ./bin/install), then fully quit Codex, reopen it, and create a new task.",
 );
 add(
   "ok",

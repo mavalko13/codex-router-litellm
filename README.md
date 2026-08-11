@@ -342,6 +342,14 @@ The desktop panel and macOS tray Settings tab also provide per-model controls:
 which enabled models can run as subagents, and which models appear in the
 Codex picker.
 
+Catalog refreshes also validate Codex's default subagent model and explicit
+models in role files. An obsolete routed slug is updated only when the same
+provider exposes one unambiguous successor. The global default must resolve to
+a picker-visible v2 model; an explicit Router role may resolve to its exact v1
+`-no-fallback` alias. Otherwise `doctor` reports the exact stale reference and
+leaves the operator's role configuration unchanged. Symlinks and other
+non-regular role/config files are never replaced.
+
 | Picker label | Model ID |
 | --- | --- |
 | Grok 4.5 (opencode Go) | `opencode-go/grok-4.5` |

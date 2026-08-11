@@ -19,6 +19,7 @@ import {
 import { codexAuthStatus, codexVersion, runCodex } from "./codex-binary.mjs";
 import { readUserModels } from "./user-models.mjs";
 import { syncRoutedCodexAgents } from "./codex-agent-catalog.mjs";
+import { reconcileCodexAgentModelReferences } from "./agent-model-lifecycle.mjs";
 import { MODEL_BY_SLUG } from "./model-registry.mjs";
 import {
   applyMultiAgentSettings,
@@ -587,13 +588,12 @@ function main() {
         }),
         aliases: {},
       };
-  atomicJson(MERGED_CATALOG_PATH, {
-    models: merged.map((model) =>
+  const writtenCatalogModels = merged.map((model) =>
       hiddenModels.has(String(model.slug))
         ? { ...model, visibility: "hide" }
         : model,
-    ),
-  });
+  );
+  atomicJson(MERGED_CATALOG_PATH, { models: writtenCatalogModels });
   atomicJson(NATIVE_ALIAS_PATH, { version: 1, aliases });
   writeAnnouncedAt(announcedAt);
   // Codex offers every file in the agents directory by name, so a model
@@ -603,6 +603,9 @@ function main() {
   const routedAgents = syncRoutedCodexAgents(
     subagentEligibleModels(routedModels, multiAgentSettings),
   );
+  const agentModelLifecycle = reconcileCodexAgentModelReferences({
+    availableModels: writtenCatalogModels,
+  });
   process.stdout.write(
     `${JSON.stringify({
       path: MERGED_CATALOG_PATH,
@@ -610,6 +613,11 @@ function main() {
       routed_models: routedModels.length,
       routed_agents: routedAgents.written.length,
       removed_agents: routedAgents.removed.length,
+      repaired_agent_model_references: agentModelLifecycle.repaired.length,
+      unresolved_agent_model_references: agentModelLifecycle.unresolved.length,
+      repaired_agent_model_mappings: agentModelLifecycle.repaired.map(
+        ({ path, reference, replacement }) => ({ path, reference, replacement }),
+      ),
       vision_bridge_engine: visionEngine?.slug || null,
       vision_bridged_models: catalogModels.filter(
         (model) => model.visionBridgeEngine !== undefined,
