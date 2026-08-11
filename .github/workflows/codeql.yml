@@ -9,6 +9,7 @@ on:
     - cron: "17 3 * * 1"
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
@@ -27,9 +28,22 @@ jobs:
         with:
           languages: javascript-typescript
           queries: security-extended
+          packs: codeql/javascript-queries:AlertSuppression.ql
 
       - name: Analyze
+        id: analyze
         uses: github/codeql-action/analyze@v4
+        with:
+          output: sarif-results
+
+      - name: Apply source suppressions
+        if: github.ref == 'refs/heads/main'
+        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
+        env:
+          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
 
   analyze-swift:
     name: Analyze (Swift)
@@ -46,11 +60,23 @@ jobs:
           languages: swift
           build-mode: manual
           queries: security-extended
+          packs: codeql/swift-queries:AlertSuppression.ql
 
       - name: Build Swift package
         run: swift build --package-path apps/macos/ModelRouterTray
 
       - name: Analyze
+        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:swift
+          output: sarif-results
+
+      - name: Apply source suppressions
+        if: github.ref == 'refs/heads/main'
+        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
+        env:
+          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}

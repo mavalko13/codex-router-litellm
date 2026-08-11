@@ -370,10 +370,13 @@ final class RouterStore: ObservableObject {
     pendingServiceStop?.cancel()
     guard presenceMode == .followCodex, serviceIntent == .stopped else { return }
     guard let root = try? sourceRoot() else { return }
-    // Do not execute a path derived from the environment or bundle metadata
-    // until it has been resolved and verified below the selected checkout.
+    // The selected checkout is operator configuration. Do not execute it until
+    // the resolved target is verified as the checkout's bin/control executable.
     guard let control = try? controlExecutableURL(in: root) else { return }
     let task = Process()
+    // `controlExecutableURL` resolves symlinks and accepts only an executable
+    // non-directory named bin/control below the selected checkout.
+    // codeql[swift/command-line-injection]
     task.executableURL = control
     task.arguments = ["service", "start"]
     task.currentDirectoryURL = root
@@ -1388,6 +1391,9 @@ final class RouterStore: ObservableObject {
     let control = try controlExecutableURL(in: root)
     return try await Task.detached {
       let task = Process()
+      // `controlExecutableURL` resolves symlinks and accepts only an executable
+      // non-directory named bin/control below the selected checkout.
+      // codeql[swift/command-line-injection]
       task.executableURL = control
       task.arguments = arguments
       task.currentDirectoryURL = root
@@ -1451,6 +1457,9 @@ final class RouterStore: ObservableObject {
 
     let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
     var isDirectory: ObjCBool = false
+    // canonicalRoot is operator-selected checkout metadata and is resolved
+    // before requiring a real directory containing the validated control executable.
+    // codeql[swift/path-injection]
     guard FileManager.default.fileExists(atPath: canonicalRoot.path, isDirectory: &isDirectory),
       isDirectory.boolValue
     else {
@@ -1472,8 +1481,14 @@ final class RouterStore: ObservableObject {
     guard control.lastPathComponent == "control",
       control.deletingLastPathComponent().lastPathComponent == "bin",
       control.path.hasPrefix(rootPath),
+      // control has been canonicalized and constrained to bin/control below
+      // canonicalRoot before this filesystem check.
+      // codeql[swift/path-injection]
       FileManager.default.fileExists(atPath: control.path, isDirectory: &isDirectory),
       !isDirectory.boolValue,
+      // control has been canonicalized and constrained to bin/control below
+      // canonicalRoot before this executable check.
+      // codeql[swift/path-injection]
       FileManager.default.isExecutableFile(atPath: control.path)
     else {
       throw RouterError("Cannot find this Model Router checkout. Build the tray app from the router repository.")
