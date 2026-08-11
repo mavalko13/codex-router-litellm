@@ -18,32 +18,6 @@
 name: Python lock
 
 "on":
-  push:
-    branches: [main]
-    paths:
-      - "requirements/**"
-      - "bin/install"
-      - "bin/lock-python"
-      - "install.ps1"
-      - "src/install-plan.mjs"
-      - "scripts/verify-python-lock.py"
-      - ".github/workflows/python-lock.yml"
-  pull_request:
-    paths:
-      - "requirements/**"
-      - "bin/install"
-      - "bin/lock-python"
-      - "install.ps1"
-      - "src/install-plan.mjs"
-      - "scripts/verify-python-lock.py"
-      - ".github/workflows/python-lock.yml"
-  # The lock is static but PyPI is not: a yanked file, or a pip that changes
-  # how it selects one, breaks an unchanged lock. The paths filter above would
-  # never fire for that, so the same job also runs weekly against main. Without
-  # this, the filter's real cost — a job that silently never runs — would go
-  # unmitigated.
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch: {}
 
 permissions:

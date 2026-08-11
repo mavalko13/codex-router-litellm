@@ -143,10 +143,18 @@ Zstandard request decoding, both Codex compaction formats, legacy migration,
 provider selection, port defaults, Anthropic API forwarding, discovery
 comparison, and service rendering for all three service platforms.
 
-Public CI still runs automatically on pushes and pull requests across macOS,
-Linux, and Windows. The Python-lock workflow also runs for relevant changes and
-weekly, CodeQL stays enabled, and tagged releases are built only after the
-suite passes with checksums plus GitHub provenance attestations.
+GitHub is deliberately a small integration gate. PRs into `beta` and `main`
+run only the short Windows service/installer regression set, including
+PowerShell parsing. The Python-lock workflow is manual-only because it is a
+four-platform package-install matrix; run it deliberately when changing the
+Python lock or installer. CodeQL stays automatic for `main`, pull requests,
+and its weekly scan.
+
+The normal flow is `codex/<feature>` to a PR into `beta`, then a separate PR
+from `beta` to `main`. Never push directly to either protected branch. Before
+opening the beta PR run `npm run verify:local`; for Desktop changes run
+`npm run verify:local:full`. The short GitHub Windows result confirms only the
+Windows integration surface and does not replace those local gates.
 
 Prepare an isolated state directory without touching the live Codex config:
 
