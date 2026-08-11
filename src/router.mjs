@@ -1880,7 +1880,7 @@ const server = http.createServer((request, response) => {
     // Keep the log sink free of upstream/user-controlled text. The response is
     // generic below, and detailed upstream failures are handled at narrower
     // translation boundaries before they reach this catch-all path.
-    console.error(`[codex-router] request failed with status ${status}`);
+    console.error("[codex-router] request failed");
     if (!response.headersSent) {
       writeJson(response, status, {
         error: {
