@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-11
+
 - **Direct LiteLLM Gateway forwarding now respects each model's API surface.**
   A trusted gateway's `directResponses` capability applies only to models
   declared as Responses-native. Chat Completions models retain the local
