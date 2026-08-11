@@ -203,16 +203,22 @@ test("Windows bootstraps runtime dependencies before importing setup", () => {
   assert.match(outer, /Dependency bootstrap failed; the managed source checkout was restored/);
 });
 
-test("guided Windows bootstrap offers exact prerequisites without silent installs", () => {
+test("guided Windows bootstrap defers Python until the selected provider needs the local bridge", () => {
   const windows = readScript("install.ps1");
   const outer = windows.slice(0, windows.indexOf('if (-not (Test-RouterCheckout $ScriptDirectory))'));
 
   assert.match(outer, /Confirm-PackageInstall/);
   assert.match(outer, /if \(-not \$UseGuided\) \{ return \$false \}/);
   assert.match(outer, /Read-Host "\$DisplayName is required\. Install it with WinGet now\? \[Y\/n\]"/);
-  for (const id of ["Git.Git", "OpenJS.NodeJS.LTS", "astral-sh.uv"]) {
+  for (const id of ["Git.Git", "OpenJS.NodeJS.LTS"]) {
     assert.match(outer, new RegExp(id.replaceAll(".", "\\.")));
   }
+  assert.doesNotMatch(outer, /Install-WinGetPackage "astral-sh\.uv"/);
+  const localLiteLlm = windows.indexOf('$LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm');
+  const deferredPython = windows.indexOf('$PythonRuntimeNeeded = $LocalLiteLlmStatus');
+  const uvPrompt = windows.indexOf('Install-WinGetPackage "astral-sh.uv"');
+  assert.ok(localLiteLlm !== -1 && deferredPython > localLiteLlm && uvPrompt > deferredPython);
+  assert.match(windows, /if \(\$PythonRuntimeNeeded -and -not \(Test-PythonRuntime\)\)/);
   assert.match(outer, /--accept-source-agreements/);
   assert.match(outer, /--accept-package-agreements/);
   assert.match(outer, /Update-ProcessPath/);

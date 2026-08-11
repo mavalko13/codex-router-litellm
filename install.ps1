@@ -172,9 +172,6 @@ if (-not $CheckoutInstall) {
   Install-WinGetPackage "OpenJS.NodeJS.LTS" "Node.js 24 LTS" {
     Test-NodeVersion
   } "Install Node.js 24 LTS from https://nodejs.org/."
-  Install-WinGetPackage "astral-sh.uv" "uv with managed Python 3.12" {
-    Test-PythonRuntime
-  } "Install uv from https://docs.astral.sh/uv/."
   Assert-Command "npm" "npm is included with Node.js."
 
   if (Test-RouterCheckout $ScriptDirectory) {
@@ -346,6 +343,17 @@ try {
   } catch {
     $LocalLiteLlmStatus = "required"
   }
+  $PythonRuntimeNeeded = $LocalLiteLlmStatus -ne "not-required" -and
+    (Get-InstallStep "python-deps") -ne "skip"
+  if ($PythonRuntimeNeeded -and -not (Test-PythonRuntime)) {
+    # Provider selection has completed by this point.  Do not require or offer
+    # Python for the direct LiteLLM Gateway path, but preserve the guided
+    # WinGet recovery for any provider that needs the local bridge.
+    Install-WinGetPackage "astral-sh.uv" "uv with managed Python 3.12" {
+      Test-PythonRuntime
+    } "Install uv from https://docs.astral.sh/uv/."
+  }
+
   if ($LocalLiteLlmStatus -eq "not-required") {
     Write-Host "Selected providers bypass local LiteLLM; skipping the Python install."
   } elseif ((Get-InstallStep "python-deps") -eq "skip") {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Windows no longer asks for Python before it knows Python is needed.** The
+  bootstrap now verifies Git and Node.js first, completes provider selection,
+  then offers `uv` only when a selected route requires the local LiteLLM
+  bridge. A LiteLLM Gateway-only direct install skips that prompt and its
+  Python dependency tree entirely.
+
 - **Public beta builds can now be installed deliberately for Windows testing.**
   The bootstrap installers accept only the explicit `main` (default) and
   `beta` channels, clone or safely switch the managed checkout to that channel,
