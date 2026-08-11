@@ -1,10 +1,10 @@
 import {
   closeSync,
+  fstatSync,
   openSync,
   readFileSync,
   readSync,
   readdirSync,
-  statSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -146,11 +146,15 @@ function shortAgentName(agentPath) {
 }
 
 function sessionNames(indexPath) {
+  let descriptor;
   try {
-    const modifiedAt = statSync(indexPath).mtimeMs;
+    // Read and stat the same open file so a concurrent Codex index rotation
+    // cannot make the cache timestamp describe different content.
+    descriptor = openSync(indexPath, "r");
+    const modifiedAt = fstatSync(descriptor).mtimeMs;
     if (cachedPath === indexPath && cachedModifiedAt === modifiedAt) return cachedNames;
     const names = new Map();
-    for (const line of readFileSync(indexPath, "utf8").split("\n")) {
+    for (const line of readFileSync(descriptor, "utf8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line);
@@ -169,6 +173,8 @@ function sessionNames(indexPath) {
     return names;
   } catch {
     return new Map();
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
   }
 }
 

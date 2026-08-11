@@ -271,6 +271,8 @@ async function handleChatCompletions(request, response) {
     if (!response.writableEnded) controller.abort();
   });
 
+  // codeql[js/file-access-to-http]: GROK_BASE is a fixed official endpoint or
+  // an operator-controlled local override; accessToken is private OAuth state.
   const requestUpstream = (accessToken) => fetch(`${GROK_BASE}/responses`, {
     method: "POST",
     headers: upstreamHeaders(accessToken, model),

@@ -370,8 +370,11 @@ final class RouterStore: ObservableObject {
     pendingServiceStop?.cancel()
     guard presenceMode == .followCodex, serviceIntent == .stopped else { return }
     guard let root = try? sourceRoot() else { return }
+    // Do not execute a path derived from the environment or bundle metadata
+    // until it has been resolved and verified below the selected checkout.
+    guard let control = try? controlExecutableURL(in: root) else { return }
     let task = Process()
-    task.executableURL = root.appendingPathComponent("bin/control")
+    task.executableURL = control
     task.arguments = ["service", "start"]
     task.currentDirectoryURL = root
     try? task.run()
@@ -1382,9 +1385,10 @@ final class RouterStore: ObservableObject {
 
   private func runControl(arguments: [String], stdin: Data? = nil) async throws -> Data {
     let root = try sourceRoot()
+    let control = try controlExecutableURL(in: root)
     return try await Task.detached {
       let task = Process()
-      task.executableURL = root.appendingPathComponent("bin/control")
+      task.executableURL = control
       task.arguments = arguments
       task.currentDirectoryURL = root
       var environment = ProcessInfo.processInfo.environment
@@ -1426,21 +1430,55 @@ final class RouterStore: ObservableObject {
   }
 
   private func sourceRoot() throws -> URL {
+    let root: URL
     if let configured = ProcessInfo.processInfo.environment["MODEL_ROUTER_SOURCE_ROOT"], !configured.isEmpty {
-      return URL(fileURLWithPath: configured, isDirectory: true)
-    }
-    if let resourceURL = Bundle.main.resourceURL {
+      root = URL(fileURLWithPath: configured, isDirectory: true)
+    } else if let resourceURL = Bundle.main.resourceURL {
       let savedRoot = resourceURL.appendingPathComponent("router-root")
       if let contents = try? String(contentsOf: savedRoot, encoding: .utf8) {
-        let root = contents.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !root.isEmpty { return URL(fileURLWithPath: root, isDirectory: true) }
+        let savedPath = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !savedPath.isEmpty {
+          root = URL(fileURLWithPath: savedPath, isDirectory: true)
+        } else {
+          root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        }
+      } else {
+        root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       }
+    } else {
+      root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     }
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-    guard FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("bin/control").path) else {
+
+    let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: canonicalRoot.path, isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else {
       throw RouterError("Cannot find this Model Router checkout. Build the tray app from the router repository.")
     }
-    return root
+    _ = try controlExecutableURL(in: canonicalRoot)
+    return canonicalRoot
+  }
+
+  private func controlExecutableURL(in root: URL) throws -> URL {
+    let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
+    let control = canonicalRoot
+      .appendingPathComponent("bin", isDirectory: true)
+      .appendingPathComponent("control", isDirectory: false)
+      .resolvingSymlinksInPath()
+      .standardizedFileURL
+    let rootPath = canonicalRoot.path == "/" ? "/" : canonicalRoot.path + "/"
+    var isDirectory: ObjCBool = false
+    guard control.lastPathComponent == "control",
+      control.deletingLastPathComponent().lastPathComponent == "bin",
+      control.path.hasPrefix(rootPath),
+      FileManager.default.fileExists(atPath: control.path, isDirectory: &isDirectory),
+      !isDirectory.boolValue,
+      FileManager.default.isExecutableFile(atPath: control.path)
+    else {
+      throw RouterError("Cannot find this Model Router checkout. Build the tray app from the router repository.")
+    }
+    return control
   }
 }
 
