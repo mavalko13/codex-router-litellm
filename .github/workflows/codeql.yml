@@ -27,7 +27,8 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
-          queries: security-extended,codeql/javascript-queries:AlertSuppression.ql
+          queries: security-extended
+          packs: codeql/javascript-queries:AlertSuppression.ql
 
       - name: Analyze
         id: analyze
@@ -58,7 +59,8 @@ jobs:
         with:
           languages: swift
           build-mode: manual
-          queries: security-extended,codeql/swift-queries:AlertSuppression.ql
+          queries: security-extended
+          packs: codeql/swift-queries:AlertSuppression.ql
 
       - name: Build Swift package
         run: swift build --package-path apps/macos/ModelRouterTray
