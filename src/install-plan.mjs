@@ -12,7 +12,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { localLiteLlmRequiredText } from "./local-litellm-mode.mjs";
 import { trayBundleDir } from "./tray-install.mjs";
 
 export const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -498,10 +497,6 @@ function main(argv) {
     process.stdout.write(`${PYTHON_REQUIREMENTS.join("\n")}\n`);
     return 0;
   }
-  if (command === "local-litellm") {
-    process.stdout.write(`${localLiteLlmRequiredText()}\n`);
-    return 0;
-  }
   // `python-install-command <uv|pip> [posix|windows]` — what CI runs so that it
   // exercises the shipped installer's command rather than a copy of it.
   if (command === "python-install-command") {
@@ -510,7 +505,7 @@ function main(argv) {
   }
   console.error(
     "Usage: install-plan.mjs status|record <node-deps|python-deps> | tray-plan | record-tray | " +
-      "requirements | local-litellm | python-install-command <uv|pip> [posix|windows]",
+    "requirements | python-install-command <uv|pip> [posix|windows]",
   );
   return 2;
 }

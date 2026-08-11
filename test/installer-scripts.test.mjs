@@ -214,7 +214,7 @@ test("guided Windows bootstrap defers Python until the selected provider needs t
     assert.match(outer, new RegExp(id.replaceAll(".", "\\.")));
   }
   assert.doesNotMatch(outer, /Install-WinGetPackage "astral-sh\.uv"/);
-  const localLiteLlm = windows.indexOf('$LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm');
+  const localLiteLlm = windows.indexOf('$LocalLiteLlmStatus = (& node src/local-litellm-status.mjs');
   const deferredPython = windows.indexOf('$PythonRuntimeNeeded = $LocalLiteLlmStatus');
   const uvPrompt = windows.indexOf('Install-WinGetPackage "astral-sh.uv"');
   assert.ok(localLiteLlm !== -1 && deferredPython > localLiteLlm && uvPrompt > deferredPython);
@@ -299,16 +299,16 @@ test("both managed installers share the local LiteLLM bypass gate", () => {
   const posix = readFileSync(path.join(root, "bin", "install"), "utf8");
   const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
 
-  assert.match(posix, /src\/install-plan\.mjs local-litellm/);
-  assert.match(windows, /src\/install-plan\.mjs local-litellm/);
+  assert.match(posix, /src\/local-litellm-status\.mjs/);
+  assert.match(windows, /src[\\/]local-litellm-status\.mjs/);
   assert.match(posix, /Selected providers bypass local LiteLLM; skipping the Python install\./);
   assert.match(windows, /Selected providers bypass local LiteLLM; skipping the Python install\./);
   assert.ok(
-    posix.indexOf("src/install-plan.mjs local-litellm") <
+    posix.indexOf("src/local-litellm-status.mjs") <
       posix.indexOf("uv pip install --python .venv/bin/python --require-hashes"),
   );
   assert.ok(
-    windows.indexOf("src/install-plan.mjs local-litellm") <
+    windows.indexOf("src/local-litellm-status.mjs") <
       windows.indexOf("uv pip install --python $Python --require-hashes"),
   );
 });
