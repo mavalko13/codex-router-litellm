@@ -86,6 +86,9 @@ provider. Входной лимит становится context window Codex, a
 .\model-router.cmd codex doctor
 ```
 
+Если при установке был выбран другой каталог, перейдите в этот managed checkout
+вместо указанного выше стандартного пути.
+
 После изменения списка моделей полностью закройте и снова откройте Codex, чтобы
 он перечитал сгенерированный каталог.
 
@@ -178,20 +181,40 @@ filesystem watcher не меняет работающие service и catalog, а
 репозитории: видимость GitHub задаётся всему репозиторию, поэтому ветка внутри
 публичного репозитория не может оставаться приватной.
 
-Обновление установленной версии:
+Перед обновлением полностью закройте desktop-приложение Codex или ChatGPT.
+Если используется только CLI, сначала завершите или остановите активные задачи.
+
+macOS и Linux, стандартный managed checkout:
 
 ```sh
+cd "${XDG_DATA_HOME:-$HOME/.local/share}/codex-router"
 ./bin/model-router codex update
 ./bin/model-router codex doctor
 ```
+
+Windows PowerShell запускайте от имени того же пользователя, который запускает
+ChatGPT/Codex, а не от администратора:
+
+```powershell
+Set-Location "$env:LOCALAPPDATA\codex-router"
+.\model-router.cmd codex update
+.\model-router.cmd codex doctor
+```
+
+Если `doctor` показывает `FAIL`, выполните
+`./bin/model-router codex doctor --fix` на macOS/Linux или
+`.\model-router.cmd codex doctor --fix` на Windows.
 
 Если новая версия не проходит install gates, updater возвращает предыдущую
 ревизию. Пока сохранена предыдущая ревизия, оператор также может выполнить
 `./bin/rollback` или `.\model-router.cmd codex rollback` на Windows. Update и repair
 используют тот же transactional порядок публикации, что и installer. При
 ошибке generation, service startup или health check возвращаются предыдущие
-managed files и service definition. После успешного обновления picker полностью
-закройте и снова откройте Codex.
+managed files и service definition. После успешного обновления полностью
+откройте Codex/ChatGPT заново и создайте новую задачу, чтобы приложение
+перечитало catalog моделей и определения субагентов. Установка из source archive
+без `.git` не поддерживает updater: скачайте новый tagged release или повторно
+запустите публичный guided installer.
 
 ## Проверка и диагностика
 

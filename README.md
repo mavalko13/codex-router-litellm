@@ -1118,12 +1118,28 @@ recovery data.
 
 ## Updates and rollback
 
-For a managed Git checkout:
+Fully quit the Codex or ChatGPT desktop app before updating. CLI-only users
+should finish or stop active tasks first.
+
+macOS and Linux (default managed checkout):
 
 ```sh
+cd "${XDG_DATA_HOME:-$HOME/.local/share}/codex-router"
 ./bin/model-router codex update
-./bin/model-router codex rollback
+./bin/model-router codex doctor
 ```
+
+Windows PowerShell, run as the same user who runs ChatGPT/Codex (not as
+Administrator):
+
+```powershell
+Set-Location "$env:LOCALAPPDATA\codex-router"
+.\model-router.cmd codex update
+.\model-router.cmd codex doctor
+```
+
+If you chose a custom installation directory, change into that managed checkout
+instead of the default path shown above.
 
 Updates require a `main` checkout with no edits to tracked files, plus a
 recognized repository origin. Untracked files never block an update, and
@@ -1131,8 +1147,22 @@ recognized repository origin. Untracked files never block an update, and
 The previous revision is retained as a local rollback ref, and a failed install
 restores the previous source revision. If you already ran `git pull` manually,
 run the update command anyway; it applies the pulled revision when the install
-manifest is older. Run `doctor --fix` after an update or rollback so the
-generated config and service match the source revision.
+manifest is older. If `doctor` reports `FAIL`, run the matching repair command:
+
+```sh
+./bin/model-router codex doctor --fix
+```
+
+```powershell
+.\model-router.cmd codex doctor --fix
+```
+
+After a successful update, fully reopen Codex/ChatGPT and create a new task so
+the app reloads the model catalog and subagent definitions. To roll back the
+retained revision, use `./bin/model-router codex rollback` on macOS/Linux or
+`.\model-router.cmd codex rollback` on Windows. Installations made from a source
+archive without `.git` cannot use the updater; download a newer tagged release
+or run the public guided installer again.
 
 Tagged releases contain `.tar.gz` and `.zip` source archives, SHA-256 checksums,
 and GitHub build-provenance attestations.

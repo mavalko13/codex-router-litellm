@@ -92,6 +92,9 @@ Windows:
 .\model-router.cmd codex doctor
 ```
 
+Если при установке был выбран другой каталог, перейдите в этот managed checkout
+вместо указанного выше стандартного пути.
+
 После изменения picker полностью закройте Codex, снова откройте его и создайте
 новую задачу.
 
@@ -154,6 +157,51 @@ service и catalog сохраняются, а periodic check остаётся fa
 локального LiteLLM bridge; при добавлении других routed providers сначала
 публикуются LiteLLM routes, затем picker catalog.
 
+## Обновление и rollback
+
+Перед обновлением полностью закройте desktop-приложение Codex или ChatGPT.
+Если используется только CLI, сначала завершите или остановите активные задачи.
+
+macOS и Linux, стандартный managed checkout:
+
+```sh
+cd "${XDG_DATA_HOME:-$HOME/.local/share}/codex-router"
+./bin/model-router codex update
+./bin/model-router codex doctor
+```
+
+Windows PowerShell запускайте от имени того же пользователя, который запускает
+ChatGPT/Codex, а не от администратора:
+
+```powershell
+Set-Location "$env:LOCALAPPDATA\codex-router"
+.\model-router.cmd codex update
+.\model-router.cmd codex doctor
+```
+
+Updater работает с managed Git checkout в ветке `main`, сохраняет предыдущую
+ревизию для rollback и автоматически возвращает её, если новая установка не
+проходит обязательные проверки. Несохранённые изменения tracked-файлов
+блокируют обновление; untracked-файлы не удаляются и не мешают ему.
+
+Если `doctor` показывает `FAIL`, выполните соответствующую repair-команду:
+
+```sh
+./bin/model-router codex doctor --fix
+```
+
+```powershell
+.\model-router.cmd codex doctor --fix
+```
+
+После успешного обновления полностью откройте Codex/ChatGPT заново и создайте
+новую задачу, чтобы приложение перечитало catalog моделей и определения
+субагентов. Для возврата сохранённой ревизии используйте
+`./bin/model-router codex rollback` на macOS/Linux или
+`.\model-router.cmd codex rollback` на Windows. Установка из source archive без
+`.git` не поддерживает updater: скачайте новый tagged release или повторно
+запустите публичный guided installer.
+
 ## Безопасность
 
 Не используйте LiteLLM master key. Создавайте отдельный virtual key для каждого
@@ -171,11 +219,6 @@ Windows. Support bundle редактирует custom endpoint и credentials.
 внутренние model definitions. Личная beta должна находиться в отдельном
 приватном репозитории: при переводе GitHub-репозитория в public публичными
 становятся все его ветки.
-
-Текущий репозиторий остаётся приватным до отдельного запроса на публикацию.
-Перед публикацией выполняются финальная проверка истории, секретов, CI и
-public install URLs. После этого реальная установка на Windows коллегой служит
-отдельным acceptance test.
 
 ## Диагностика
 
