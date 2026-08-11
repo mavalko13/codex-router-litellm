@@ -37,12 +37,12 @@ jobs:
 
       - name: Apply source suppressions
         if: github.ref == 'refs/heads/main'
-        uses: advanced-security/dismiss-alerts@a18f986bdb40edba0dd7a74382c15d4a3d50a1c8
-        with:
-          sarif-id: ${{ steps.analyze.outputs.sarif-id }}
-          sarif-file: ${{ steps.analyze.outputs.sarif-output }}
+        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
         env:
+          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
 
   analyze-swift:
     name: Analyze (Swift)
@@ -72,9 +72,9 @@ jobs:
 
       - name: Apply source suppressions
         if: github.ref == 'refs/heads/main'
-        uses: advanced-security/dismiss-alerts@a18f986bdb40edba0dd7a74382c15d4a3d50a1c8
-        with:
-          sarif-id: ${{ steps.analyze.outputs.sarif-id }}
-          sarif-file: ${{ steps.analyze.outputs.sarif-output }}
+        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
         env:
+          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
