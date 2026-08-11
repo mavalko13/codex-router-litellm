@@ -385,6 +385,28 @@ test("installedSkillsFresh is true after install and false after a manual edit",
   }
 });
 
+test(
+  "installedSkillsFresh rejects an identical-content symlinked skill file",
+  { skip: process.platform === "win32" },
+  () => {
+    const home = tempCodexHome();
+    const external = path.join(home, "external-skill.md");
+    try {
+      installSkills(home, { quiet: true });
+      const target = path.join(home, "skills", "codex-router", "SKILL.md");
+      writeFileSync(external, readFileSync(target, "utf8"));
+      rmSync(target);
+      symlinkSync(external, target, "file");
+
+      const { fresh, stale } = installedSkillsFresh(home);
+      assert.equal(fresh, false);
+      assert.ok(stale.includes("codex-router"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
+
 test("freshness includes unexpected hidden files but ignores only the ownership marker", () => {
   const home = tempCodexHome();
   try {

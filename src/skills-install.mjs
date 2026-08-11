@@ -13,10 +13,14 @@ import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
+  constants as fsConstants,
   cpSync,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -238,6 +242,30 @@ export function installedSkillsFresh(codexHome) {
   return { fresh: stale.length === 0, stale };
 }
 
+function regularFileContent(file) {
+  let descriptor;
+  try {
+    const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+    descriptor = openSync(file, fsConstants.O_RDONLY | noFollow);
+    const opened = fstatSync(descriptor);
+    const current = lstatSync(file);
+    if (
+      !opened.isFile() ||
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      opened.dev !== current.dev ||
+      opened.ino !== current.ino
+    ) {
+      return null;
+    }
+    return readFileSync(descriptor);
+  } catch {
+    return null;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 function sameDirContent(source, target, root = true) {
   try {
     const sourceStat = lstatSync(source);
@@ -269,10 +297,9 @@ function sameDirContent(source, target, root = true) {
         if (!sameDirContent(sourcePath, targetPath, false)) return false;
       } else if (a.isFile() || b.isFile()) {
         if (!a.isFile() || !b.isFile()) return false;
-        // This is a read-only freshness comparison. A concurrent change can
-        // only make the pack appear stale; it grants no ownership.
-        const sourceContent = readFileSync(sourcePath); // codeql[js/file-system-race]
-        const targetContent = readFileSync(targetPath); // codeql[js/file-system-race]
+        const sourceContent = regularFileContent(sourcePath);
+        const targetContent = regularFileContent(targetPath);
+        if (!sourceContent || !targetContent) return false;
         if (!sourceContent.equals(targetContent)) return false;
       } else {
         return false;
