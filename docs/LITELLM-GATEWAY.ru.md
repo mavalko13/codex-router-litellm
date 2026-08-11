@@ -23,10 +23,11 @@ flowchart LR
   G --> M["Модели, разрешённые ключу"]
 ```
 
-Когда выбран только **Your LiteLLM Gateway**, Router отправляет текстовые
-маршруты прямо на Responses endpoint gateway, а локальный adapter выключен.
-Если другому выбранному provider нужен translation bridge, Router запускает
-adapter и использует для каждой модели объявленный OpenAI-compatible surface.
+Responses-native модели из **Your LiteLLM Gateway** Router отправляет прямо на
+Responses endpoint gateway. Chat Completions модели идут через локальный
+adapter, который сохраняет корректный перевод инструментов и истории Codex.
+Router запускает adapter, когда он нужен хотя бы одной выбранной модели, и
+использует для каждой модели объявленный OpenAI-compatible surface.
 Credential forwarder удаляет заголовки идентификации Codex и ChatGPT, добавляет
 только выбранный LiteLLM virtual key и отправляет запрос по сохранённому
 upstream URL. Нативные GPT-модели обходят внешний маршрут и продолжают работать

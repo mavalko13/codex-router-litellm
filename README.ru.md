@@ -87,10 +87,11 @@ OpenAI-compatible URL видимым текстом, а restricted virtual key �
 `-Providers litellm-gateway` в Windows. Платный smoke test запускается только
 при явном согласии.
 
-Если выбран только **Your LiteLLM Gateway**, Router направляет текстовые
-маршруты сразу на его OpenAI Responses endpoint: локальный Python/LiteLLM
-adapter не устанавливается и не запускается. Если затем выбрать провайдера,
-которому нужен bridge, он будет автоматически включён снова.
+Для **Your LiteLLM Gateway** прямой путь используют только модели, явно
+объявленные как Responses-native. Curated Chat Completions модели идут через
+локальный Python/LiteLLM adapter, чтобы корректно переводились инструменты и
+история Codex. Установщик запускает или устанавливает adapter только когда он
+нужен выбранным моделям.
 
 После установки выберите модели:
 

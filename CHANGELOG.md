@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+- **Direct LiteLLM Gateway forwarding now respects each model's API surface.**
+  A trusted gateway's `directResponses` capability applies only to models
+  declared as Responses-native. Chat Completions models retain the local
+  LiteLLM bridge, which translates the Codex toolset and conversation history
+  instead of sending incompatible native tool definitions upstream.
+
 - **Windows no longer asks for Python before it knows Python is needed.** The
   bootstrap now verifies Git and Node.js first, completes provider selection,
   then offers `uv` only when a selected route requires the local LiteLLM
-  bridge. A LiteLLM Gateway-only direct install skips that prompt and its
-  Python dependency tree entirely.
+  bridge. A Responses-native-only selection skips that prompt and its Python
+  dependency tree entirely.
 
 - **Public beta builds can now be installed deliberately for Windows testing.**
   The bootstrap installers accept only the explicit `main` (default) and
@@ -15,12 +21,12 @@
   makes a pre-release test possible without making an arbitrary Git reference
   executable or promoting the build to `main`.
 
-- **An exclusive LiteLLM Gateway install no longer requires a local Python
-  proxy.** Trusted gateways that explicitly advertise direct Responses support
-  receive Codex requests through the protected credential forwarder, avoiding
-  the redundant local LiteLLM hop. Adding a provider that needs protocol
-  translation automatically restores the local bridge; direct forwarding is a
-  validated provider capability, never a provider-ID exception.
+- **Responses-native LiteLLM Gateway routes can bypass the local Python
+  proxy.** A trusted gateway's explicitly Responses-native models receive
+  Codex requests through the protected credential forwarder, avoiding the
+  redundant local LiteLLM hop. Models that need protocol translation
+  automatically retain the local bridge; direct forwarding is a validated
+  per-model capability, never a provider-ID exception.
 
 - **Reinstalling on Windows no longer leaves the previous router running as an
   orphan.** Task Scheduler ended the hidden `wscript.exe` action but left its

@@ -416,7 +416,7 @@ test("router refuses a known model whose provider is hidden", async () => {
   }
 });
 
-test("router direct-forwards litellm-gateway Chat models through external Responses", async () => {
+test("router direct-forwards Responses-native LiteLLM Gateway models", async () => {
   const upstreamRequests = [];
   let failure;
   const upstream = await mockServer(async (request, response) => {
@@ -488,21 +488,21 @@ test("router direct-forwards litellm-gateway Chat models through external Respon
       version: 1,
       models: [
         {
-          slug: "litellm-gateway/kimi-k2-7-code",
-          gatewayModel: "litellm-gateway-kimi-k2-7-code",
-          upstreamModel: "ollama-cloud-kimi-k2-7-code",
+          slug: "litellm-gateway/codex-gpt-5.5",
+          gatewayModel: "litellm-gateway-codex-gpt-5-5",
+          upstreamModel: "codex-gpt-5.5",
           provider: "litellm-gateway",
           listed: true,
-          apiSurface: "chat-completions",
-          displayName: "Kimi Gateway",
-          description: "Test Chat model via the external LiteLLM Responses endpoint.",
+          apiSurface: "responses",
+          displayName: "Codex Gateway",
+          description: "Test Responses-native model via the external LiteLLM Responses endpoint.",
           priority: 1,
           defaultEffort: "high",
           reasoningLevels: [{ effort: "high", description: "Test reasoning" }],
           contextWindow: 131072,
           autoCompact: 110000,
           inputModalities: ["text"],
-          compHash: "litellm-gateway-kimi-k2-7-code-test",
+          compHash: "litellm-gateway-codex-gpt-5-5-test",
         },
       ],
     })}\n`,
@@ -539,20 +539,20 @@ test("router direct-forwards litellm-gateway Chat models through external Respon
     const response = await fetch(`${routerBase(routerPort)}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+      body: JSON.stringify({ model: "litellm-gateway/codex-gpt-5.5", input: "test" }),
     });
     assert.equal(response.status, 200, await response.text());
     assert.equal(upstreamRequests.length, 1);
     assert.equal(upstreamRequests[0].url, "/v1/responses");
     assert.equal(upstreamRequests[0].headers.authorization, "Bearer test-virtual-key");
-    assert.equal(upstreamRequests[0].body.model, "ollama-cloud-kimi-k2-7-code");
+    assert.equal(upstreamRequests[0].body.model, "codex-gpt-5.5");
     assert.equal(localGatewayRequests.length, 0);
 
     failure = "response";
     const directFailure = await fetch(`${routerBase(routerPort)}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+      body: JSON.stringify({ model: "litellm-gateway/codex-gpt-5.5", input: "test" }),
     });
     assert.equal(directFailure.status, 503);
     const directFailurePayload = await directFailure.json();
@@ -564,7 +564,7 @@ test("router direct-forwards litellm-gateway Chat models through external Respon
     const compactFailure = await fetch(`${routerBase(routerPort)}/responses/compact`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "litellm-gateway/kimi-k2-7-code", input: "test" }),
+      body: JSON.stringify({ model: "litellm-gateway/codex-gpt-5.5", input: "test" }),
     });
     assert.equal(compactFailure.status, 429);
     assert.equal(compactFailure.headers.get("retry-after"), "17");
@@ -579,6 +579,94 @@ test("router direct-forwards litellm-gateway Chat models through external Respon
     await stopChild(router);
     await stopChild(api);
     await closeServer(upstream.server);
+    await closeServer(localGateway.server);
+    rmSync(testRoot, { recursive: true, force: true });
+  }
+});
+
+test("router sends LiteLLM Gateway chat-completions models through the local bridge", async () => {
+  const localGatewayRequests = [];
+  const localGateway = await mockServer(async (request, response) => {
+    localGatewayRequests.push({ url: request.url, body: await bodyJson(request) });
+    json(response, 200, {
+      id: "resp_local_bridge_test",
+      object: "response",
+      output: [{ type: "message", content: [{ type: "output_text", text: "bridged" }] }],
+    });
+  });
+  const testRoot = mkdtempSync(path.join(os.tmpdir(), "codex-router-direct-chat-bridge-"));
+  const routerPort = await openPort();
+  writeFileSync(
+    path.join(testRoot, "enabled-providers.json"),
+    `${JSON.stringify({ version: 1, providers: ["litellm-gateway"] })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    path.join(testRoot, "user-models.json"),
+    `${JSON.stringify({
+      version: 1,
+      models: [
+        {
+          slug: "litellm-gateway/ollama-cloud-minimax-m3",
+          gatewayModel: "litellm-gateway-ollama-cloud-minimax-m3",
+          upstreamModel: "ollama-cloud-minimax-m3",
+          provider: "litellm-gateway",
+          listed: true,
+          apiSurface: "chat-completions",
+          displayName: "MiniMax Gateway",
+          description: "Test chat-completions model through local LiteLLM.",
+          priority: 1,
+          defaultEffort: "high",
+          reasoningLevels: [{ effort: "high", description: "Test reasoning" }],
+          contextWindow: 131072,
+          autoCompact: 110000,
+          inputModalities: ["text"],
+          compHash: "litellm-gateway-ollama-cloud-minimax-m3-test",
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
+  const router = run("router.mjs", {
+    MODEL_ROUTER_STATE_DIR: testRoot,
+    CODEX_ROUTER_STATE_DIR: testRoot,
+    CODEX_ROUTER_PORT: String(routerPort),
+    CODEX_ROUTER_GATEWAY_BASE_URL: `http://127.0.0.1:${localGateway.port}/v1`,
+    CODEX_ROUTER_GATEWAY_HEALTH_URL: `http://127.0.0.1:${localGateway.port}/health`,
+    CODEX_ROUTER_LOCAL_LITELLM_ENABLED: "1",
+    MODEL_ROUTER_LOCAL_LITELLM_ENABLED: "1",
+    CODEX_ROUTER_SHOW_ALL_MODELS: "0",
+    CODEX_ROUTER_QUIET: "1",
+  });
+
+  try {
+    await waitFor(`${routerBase(routerPort)}/models`, router);
+    const response = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "litellm-gateway/ollama-cloud-minimax-m3",
+        input: "как дела?",
+        tools: [{ type: "function", name: "exec_command", parameters: { type: "object" } }],
+      }),
+    });
+    assert.equal(response.status, 200, await response.text());
+    assert.equal(localGatewayRequests.length, 1);
+    assert.equal(localGatewayRequests[0].url, "/v1/responses");
+    assert.equal(
+      localGatewayRequests[0].body.model,
+      "litellm-gateway-ollama-cloud-minimax-m3",
+    );
+    assert.ok(
+      localGatewayRequests[0].body.tools.some((tool) => tool?.name === "exec_command"),
+      "the client-provided file tool reaches the local translator",
+    );
+    assert.ok(
+      localGatewayRequests[0].body.tools.some((tool) => tool?.name === "codex_app__automation_update"),
+      "the deferred Codex app toolset is relayed to the local translator",
+    );
+  } finally {
+    await stopChild(router);
     await closeServer(localGateway.server);
     rmSync(testRoot, { recursive: true, force: true });
   }

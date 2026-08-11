@@ -1,5 +1,6 @@
 import { MODELS, PROVIDERS } from "./model-registry.mjs";
 import { readProviderSelection } from "./provider-selection.mjs";
+import { API_SURFACE_RESPONSES, effectiveApiSurface } from "./api-surface.mjs";
 
 export function providerCanBypassLocalLiteLlm(providerOrId, providers = PROVIDERS) {
   const provider =
@@ -15,7 +16,12 @@ export function modelCanBypassLocalLiteLlm(model, provider = PROVIDERS.get(model
       provider &&
       provider.kind === "openai-compatible" &&
       !provider.keyless &&
-      providerCanBypassLocalLiteLlm(provider),
+      providerCanBypassLocalLiteLlm(provider) &&
+      // `directResponses` declares that the trusted gateway can accept native
+      // Responses traffic. It does not turn Chat Completions-only upstream
+      // models into Responses-native models. Those still require the local
+      // LiteLLM bridge to translate Codex tools and history correctly.
+      effectiveApiSurface(model, provider) === API_SURFACE_RESPONSES,
   );
 }
 
