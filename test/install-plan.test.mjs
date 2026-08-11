@@ -106,7 +106,8 @@ test("local LiteLLM is required only outside direct litellm-gateway mode", () =>
       models: [directModel, chatOnlyModel],
       providers,
     }),
-    false,
+    true,
+    "a chat-completions model needs the local bridge even behind a trusted Responses gateway",
   );
   assert.equal(
     localLiteLlmRequiredForSelection({

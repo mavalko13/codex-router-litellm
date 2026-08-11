@@ -86,10 +86,11 @@ visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
 request unless `--smoke-test` is explicitly selected.
 
-When only **Your LiteLLM Gateway** is selected, the Router sends its text routes
-directly to that gateway's OpenAI Responses endpoint and does not install or
-run a local Python/LiteLLM adapter. Selecting any provider that needs the local
-bridge automatically restores the adapter.
+For **Your LiteLLM Gateway**, only models explicitly declared as
+Responses-native use the direct gateway path. Curated Chat Completions models
+use the local Python/LiteLLM adapter so Codex tools and history are translated
+correctly. The installer starts or installs that adapter only when the selected
+models require it.
 
 Requirements:
 
@@ -199,10 +200,10 @@ terminal closure and is available to launchd, systemd, and Windows Task
 Scheduler. `CODEX_ROUTER_LITELLM_BASE_URL` can temporarily override it for a
 foreground command. Keep the virtual key restricted by model, budget, rate,
 and concurrency in LiteLLM; never reuse an administrator or master key.
-When `litellm-gateway` is the only selected provider and its external endpoint
-supports Responses for the curated text models, routed traffic bypasses the
-local LiteLLM adapter and goes through the credential forwarder directly to
-that endpoint, including model groups whose upstream API is Chat Completions.
+When `litellm-gateway` is the only selected provider, its explicitly
+Responses-native models bypass the local LiteLLM adapter and go through the
+credential forwarder directly to that endpoint. Chat Completions models still
+use the local adapter; this preserves Codex tool and conversation translation.
 See the [complete LiteLLM gateway guide](docs/LITELLM-GATEWAY.md) for request
 flow, local state, security boundaries, updates, and platform verification.
 
