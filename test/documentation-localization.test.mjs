@@ -58,6 +58,30 @@ test("Windows docs use the policy-safe wrapper and the unified ChatGPT process",
   assert.doesNotMatch(troubleshooting, /Get-Process Codex/);
 });
 
+test("English and Russian docs explain managed updates on every supported OS", () => {
+  const documents = [
+    read("README.md"),
+    read("README.ru.md"),
+    read("docs", "LITELLM-GATEWAY.md"),
+    read("docs", "LITELLM-GATEWAY.ru.md"),
+  ];
+  const install = read("docs", "INSTALL.md");
+
+  for (const document of documents) {
+    assert.match(document, /XDG_DATA_HOME/);
+    assert.match(document, /LOCALAPPDATA/);
+    assert.match(document, /\.\/bin\/model-router codex update/);
+    assert.match(document, /\.\\model-router\.cmd codex update/);
+    assert.match(document, /doctor --fix/);
+    assert.match(document, /rollback/i);
+  }
+
+  assert.match(install, /macOS and Linux/);
+  assert.match(install, /Windows PowerShell/);
+  assert.match(install, /same user who runs ChatGPT\/Codex/);
+  assert.match(install, /source\s+archive\s+without\s+`\.git`\s+cannot\s+use\s+the\s+updater/i);
+});
+
 test("quick install selects LiteLLM while keeping endpoint entry interactive", () => {
   const english = read("README.md");
   const russian = read("README.ru.md");

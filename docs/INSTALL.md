@@ -329,18 +329,41 @@ Live quota-consuming verification is separate:
 
 ## Update and rollback
 
+Fully quit the Codex or ChatGPT desktop app before updating. CLI-only users
+should finish or stop active tasks first.
+
+macOS and Linux (default managed checkout):
+
 ```sh
-./bin/update check
-./bin/update
-./bin/rollback
+cd "${XDG_DATA_HOME:-$HOME/.local/share}/codex-router"
+./bin/model-router codex update check
+./bin/model-router codex update
+./bin/model-router codex doctor
 ```
 
-Windows:
+Windows PowerShell, run as the same user who runs ChatGPT/Codex (not as
+Administrator):
 
 ```powershell
+Set-Location "$env:LOCALAPPDATA\codex-router"
 .\model-router.cmd codex update check
 .\model-router.cmd codex update
-.\model-router.cmd codex rollback
+.\model-router.cmd codex doctor
+```
+
+If setup used a custom installation directory, change into that managed
+checkout instead of the default path shown above.
+
+If `doctor` reports `FAIL`, repair and verify again:
+
+```sh
+./bin/model-router codex doctor --fix
+./bin/model-router codex doctor
+```
+
+```powershell
+.\model-router.cmd codex doctor --fix
+.\model-router.cmd codex doctor
 ```
 
 The updater requires the recognized GitHub origin and a checkout with no edits
@@ -372,6 +395,13 @@ that carries no `package-lock.json` or LiteLLM pin change costs a service
 restart rather than a full `npm ci` and PyPI resolution. `./bin/doctor --fix`
 rebuilds them regardless, as does `./bin/install --force-deps`
 (`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckoutInstall -ForceDeps` on Windows).
+
+After a successful update, fully reopen Codex/ChatGPT and create a new task so
+the app reloads the model catalog and subagent definitions. Manual rollback is
+`./bin/model-router codex rollback` on macOS/Linux or
+`.\model-router.cmd codex rollback` on Windows. Installations made from a source
+archive without `.git` cannot use the updater; download a newer tagged release
+or rerun the public guided installer.
 
 For the operator-owned `litellm-gateway`, installation and startup use the
 saved restricted virtual key to discover live models automatically. New IDs

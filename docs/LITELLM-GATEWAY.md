@@ -86,6 +86,9 @@ On Windows, use the same commands through the PowerShell wrapper:
 .\model-router.cmd codex doctor
 ```
 
+If you chose a custom installation directory, change into that managed checkout
+instead of the default path shown above.
+
 Fully quit and reopen Codex after curation so it reloads the generated model
 catalog.
 
@@ -177,20 +180,39 @@ beta with private provider metadata must live in a separate private repository;
 GitHub repository visibility applies to every branch, so a private branch
 inside a public repository is not private.
 
-Update the installed checkout with:
+Fully quit the Codex or ChatGPT desktop app before updating. CLI-only users
+should finish or stop active tasks first.
+
+macOS and Linux (default managed checkout):
 
 ```sh
+cd "${XDG_DATA_HOME:-$HOME/.local/share}/codex-router"
 ./bin/model-router codex update
 ./bin/model-router codex doctor
 ```
+
+Windows PowerShell, run as the same user who runs ChatGPT/Codex (not as
+Administrator):
+
+```powershell
+Set-Location "$env:LOCALAPPDATA\codex-router"
+.\model-router.cmd codex update
+.\model-router.cmd codex doctor
+```
+
+If `doctor` reports `FAIL`, run `./bin/model-router codex doctor --fix` on
+macOS/Linux or `.\model-router.cmd codex doctor --fix` on Windows.
 
 If the update does not pass its install gates, the updater restores the prior
 revision. An operator can also run `./bin/rollback` (or
 `.\model-router.cmd codex rollback` on Windows) while the retained revision is
 available. Update and repair run the same transactional publication order as
 installation. If generation, service startup, or health verification fails,
-the previous managed files and service definition are restored. Fully quit and
-reopen Codex after a successful update that changes the picker catalog.
+the previous managed files and service definition are restored. Fully reopen
+Codex/ChatGPT and create a new task after a successful update so the app reloads
+the model catalog and subagent definitions. A source archive without `.git`
+cannot use the updater; download a newer tagged release or rerun the public
+guided installer.
 
 ## Verification and troubleshooting
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Update instructions now cover every supported desktop platform in English
+  and Russian.** The public README, LiteLLM guides, and installation guide show
+  the managed-checkout path and policy-safe commands for macOS, Linux, and
+  Windows, when to run `doctor --fix`, how rollback works, and when to fully
+  reopen Codex/ChatGPT so it reloads models and subagent definitions.
+
 ## 0.4.1 - 2026-08-11
 
 - **Subagent model references now follow the live catalog safely.** A catalog
