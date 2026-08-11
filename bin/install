@@ -86,7 +86,7 @@ else
   node src/install-plan.mjs record node-deps
 fi
 
-local_litellm_status="$(node src/install-plan.mjs local-litellm 2>/dev/null || echo required)"
+local_litellm_status="$(node src/local-litellm-status.mjs 2>/dev/null || echo required)"
 if [ "$local_litellm_status" = not-required ]; then
   echo "Selected providers bypass local LiteLLM; skipping the Python install."
 elif [ "$(install_step python-deps)" = skip ]; then

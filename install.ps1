@@ -338,7 +338,7 @@ try {
   $Python = Join-Path $ScriptDirectory ".venv\Scripts\python.exe"
   $LocalLiteLlmStatus = "required"
   try {
-    $LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm 2>$null | Select-Object -Last 1).Trim()
+    $LocalLiteLlmStatus = (& node src/local-litellm-status.mjs 2>$null | Select-Object -Last 1).Trim()
     if ($LASTEXITCODE -ne 0) { $LocalLiteLlmStatus = "required" }
   } catch {
     $LocalLiteLlmStatus = "required"

@@ -145,6 +145,58 @@ function coalesceAssistantMessages(messages) {
   return coalesced;
 }
 
+function hasToolName(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidToolCall(call) {
+  return Boolean(
+    call &&
+      typeof call === "object" &&
+      typeof call.id === "string" &&
+      call.id &&
+      hasToolName(call.function?.name),
+  );
+}
+
+// A partial Responses->chat conversion can leave a placeholder function call
+// with an empty name in history. Lenient gateways ignore it, but strict OpenAI
+// compatible chat endpoints (including MiniMax) reject the entire next turn.
+// Drop only the malformed call; its matching tool row is then removed by the
+// pairing repair below. A valid neighbour in the same assistant turn survives.
+function dropMalformedToolCalls(messages) {
+  return messages.map((message) => {
+    if (message?.role !== "assistant" || !Array.isArray(message.tool_calls)) return message;
+    const toolCalls = message.tool_calls.filter(isValidToolCall);
+    if (toolCalls.length === message.tool_calls.length) return message;
+    const copy = { ...message };
+    if (toolCalls.length) copy.tool_calls = toolCalls;
+    else delete copy.tool_calls;
+    return copy;
+  });
+}
+
+function sanitizeChatToolDefinitions(payload) {
+  if (!Array.isArray(payload.tools)) return;
+  const tools = payload.tools.filter(
+    (tool) => tool?.type !== "function" || hasToolName(tool.function?.name),
+  );
+  const functionNames = new Set(
+    tools
+      .filter((tool) => tool?.type === "function")
+      .map((tool) => tool.function.name),
+  );
+  if (tools.length) payload.tools = tools;
+  else delete payload.tools;
+
+  const forcedName = payload.tool_choice?.type === "function"
+    ? payload.tool_choice.function?.name
+    : undefined;
+  if ((forcedName !== undefined && !functionNames.has(forcedName)) || tools.length === 0) {
+    delete payload.tool_choice;
+  }
+}
+
 // Strict chat-completions providers (Console Go / MiniMax / similar) reject any
 // assistant tool_calls message whose matching tool results are incomplete or
 // separated by non-tool traffic. LiteLLM's Responses->chat translation and
@@ -158,7 +210,8 @@ const SYNTHETIC_TOOL_RESULT =
 function toolCallIds(message) {
   if (!Array.isArray(message?.tool_calls)) return [];
   return message.tool_calls
-    .map((call) => (typeof call?.id === "string" ? call.id : ""))
+    .filter(isValidToolCall)
+    .map((call) => call.id)
     .filter(Boolean);
 }
 
@@ -280,7 +333,9 @@ function sanitizeGeminiImageContent(messages) {
 
 function sanitizeChatToolHistory(messages, provider) {
   if (!Array.isArray(messages)) return messages;
-  const repaired = ensureToolResultsForCalls(coalesceAssistantMessages(messages));
+  const repaired = ensureToolResultsForCalls(
+    dropMalformedToolCalls(coalesceAssistantMessages(messages)),
+  );
   return isGeminiProvider(provider)
     ? ensureGeminiThoughtSignatures(sanitizeGeminiImageContent(repaired))
     : repaired;
@@ -349,6 +404,7 @@ function normalizeBody(buffer, contentType, route) {
   if (Array.isArray(payload.messages)) {
     payload.messages = sanitizeChatToolHistory(payload.messages, provider);
   }
+  if (apiSurface !== API_SURFACE_RESPONSES) sanitizeChatToolDefinitions(payload);
   if (provider.authProfile === "github-copilot") {
     // This is native ChatGPT account metadata, not an upstream scheduling
     // request Copilot accepts.
