@@ -730,6 +730,9 @@ async function relayEncryptedAgentPayload(request, item, encrypted, signal) {
     method: "POST",
     // codeql[js/file-access-to-http]
     headers: { ...nativeHeaders(request), Accept: "text/event-stream" },
+    // body.model is a catalog-selected routing slug sent to the configured
+    // native endpoint, not private file contents.
+    // codeql[js/file-access-to-http]
     body: JSON.stringify(body),
     signal,
   });
