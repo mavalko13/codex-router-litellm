@@ -11,6 +11,7 @@
       "configurableBaseUrl": true,
       "autoCurateDiscoveredModels": true,
       "importLiveModelMetadata": true,
+      "directResponses": true,
       "defaultApiSurface": "chat-completions",
       "apiSurfaceOverrides": [
         {

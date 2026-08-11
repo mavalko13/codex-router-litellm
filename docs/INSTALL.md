@@ -17,7 +17,8 @@ This page covers the Codex target:
 Required software:
 
 - Node.js 22.19+ (Node.js 24 LTS recommended)
-- `uv`, or Python 3.10+ with `venv`
+- `uv`, or Python 3.10+ with `venv`, when the selected providers need the
+  local LiteLLM bridge
 - Git for managed one-command installation and rollback
 - At least one supported provider credential, or a local Ollama runtime
 
@@ -63,17 +64,35 @@ visible input and for a restricted virtual key with hidden input. Omit the
 provider argument only when you intentionally want the advanced chooser with
 all supported providers.
 
-Guided Windows setup checks Git, Node.js 22.19+, and `uv`/Python before it
-changes Codex. When one is missing and WinGet is available, it asks before
-installing the exact package (`Git.Git`, `OpenJS.NodeJS.LTS`, or
-`astral-sh.uv`), refreshes the current process PATH, and continues. It never
-installs a package manager or runtime without confirmation, and `-Auto` keeps
-missing prerequisites as a hard error.
+Guided Windows setup checks Git and Node.js 22.19+ before it changes Codex.
+It asks for `uv`/Python only after the selected providers need the local
+LiteLLM bridge. When one is missing and WinGet is available, it asks before
+installing the exact package (`Git.Git`, `OpenJS.NodeJS.LTS`, or, only for the
+bridge, `astral-sh.uv`), refreshes the current process PATH, and continues. It
+never installs a package manager or runtime without confirmation, and `-Auto`
+keeps missing prerequisites as a hard error.
 
 The checkout includes `model-router.cmd`, which applies a one-command
 `ExecutionPolicy Bypass` to the repository's signed-in-user PowerShell wrapper.
 Use it for later Windows commands; changing the machine or user execution
 policy is unnecessary.
+
+### Test the public beta before release
+
+`main` is the stable installation channel. On a disposable Windows test
+computer, an upcoming **public** release can be tested from `beta` without
+promoting it to `main`:
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
+```
+
+`-Branch` is intentionally restricted to `main` and `beta`; it is not a way to
+run arbitrary Git references. The beta installer keeps the gateway URL and
+virtual key interactive and local. Re-run the same command while testing beta:
+the ordinary in-checkout updater intentionally tracks `main`.
 
 Clone-and-review installation is also supported:
 
@@ -224,7 +243,9 @@ Setup performs these operations in order:
 1. Validates provider selection and credential presence.
 2. Detects other model-catalog owners and earlier Codex Router variants.
 3. With approval, snapshots and stops only recognized older variants.
-4. Installs locked Node dependencies and pinned LiteLLM in `.venv`.
+4. Installs locked Node dependencies. It installs pinned LiteLLM in `.venv`
+   only when the selected providers need the local bridge; an exclusive
+   `litellm-gateway` selection skips Python.
 5. Generates separate random Codex caller and internal-service keys.
 6. Captures the native Codex model catalog and adds only selected provider models.
 7. Generates gateway routes from the split registry tree under `config/`.

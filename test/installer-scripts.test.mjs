@@ -110,6 +110,24 @@ test("install.sh is valid POSIX shell", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("bootstrap installers allow only the explicit public main and beta channels", () => {
+  const posix = readScript("install.sh");
+  const windows = readScript("install.ps1");
+
+  assert.match(posix, /^branch=main$/m);
+  assert.match(posix, /--branch\)\n\s+\[ "\$#" -ge 2 \] \|\| die "--branch requires main or beta"/);
+  assert.match(posix, /case "\$branch" in\n\s+main\|beta\)/);
+  assert.match(posix, /git clone --depth 1 --branch "\$branch"/);
+  assert.match(posix, /git -C "\$install_dir" fetch --quiet --depth 1 origin "\$branch"/);
+  assert.match(posix, /git -C "\$install_dir" pull --ff-only origin "\$branch"/);
+
+  assert.match(windows, /\[ValidateSet\("main", "beta"\)\]\s*\[string\]\$Branch = "main"/);
+  assert.match(windows, /git -C \$InstallDir fetch --quiet --depth 1 origin \$Branch/);
+  assert.match(windows, /git -C \$InstallDir checkout --quiet -B \$Branch "origin\/\$Branch"/);
+  assert.match(windows, /git -C \$InstallDir pull --ff-only origin \$Branch/);
+  assert.match(windows, /git clone --depth 1 --branch \$Branch \$RepositoryUrl \$InstallDir/);
+});
+
 test("refresh-catalog publishes auto-curated routes before the picker", () => {
   const source = readScript("bin", "refresh-catalog");
   const autoCurate = source.indexOf("node src/auto-curate-models.mjs");
@@ -159,18 +177,18 @@ test("both installers keep the update when setup reports exit 2", () => {
   assert.match(windows, /switch --quiet --detach \$PreviousRevision/);
 });
 
-test("Windows bootstrap does not turn successful Git switch notices into errors", () => {
+test("Windows bootstrap does not turn successful Git branch notices into errors", () => {
   const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
-  const switchCommands = windows
+  const branchCommands = windows
     .split(/\r?\n/)
-    .filter((line) => /& git -C .* switch /.test(line));
+    .filter((line) => /& git -C .* (?:switch|checkout) /.test(line));
 
-  assert.equal(switchCommands.length, 3);
-  for (const command of switchCommands) {
-    assert.match(command, /switch --quiet /);
+  assert.equal(branchCommands.length, 3);
+  for (const command of branchCommands) {
+    assert.match(command, /(?:switch|checkout) --quiet /);
     assert.doesNotMatch(command, /2>\$null/);
   }
-  assert.match(windows, /switch --quiet main\s+if \(\$LASTEXITCODE -ne 0\)/);
+  assert.match(windows, /checkout --quiet -B \$Branch "origin\/\$Branch"\s+if \(\$LASTEXITCODE -ne 0\)/);
 });
 
 test("Windows bootstraps runtime dependencies before importing setup", () => {
@@ -185,16 +203,22 @@ test("Windows bootstraps runtime dependencies before importing setup", () => {
   assert.match(outer, /Dependency bootstrap failed; the managed source checkout was restored/);
 });
 
-test("guided Windows bootstrap offers exact prerequisites without silent installs", () => {
+test("guided Windows bootstrap defers Python until the selected provider needs the local bridge", () => {
   const windows = readScript("install.ps1");
   const outer = windows.slice(0, windows.indexOf('if (-not (Test-RouterCheckout $ScriptDirectory))'));
 
   assert.match(outer, /Confirm-PackageInstall/);
   assert.match(outer, /if \(-not \$UseGuided\) \{ return \$false \}/);
   assert.match(outer, /Read-Host "\$DisplayName is required\. Install it with WinGet now\? \[Y\/n\]"/);
-  for (const id of ["Git.Git", "OpenJS.NodeJS.LTS", "astral-sh.uv"]) {
+  for (const id of ["Git.Git", "OpenJS.NodeJS.LTS"]) {
     assert.match(outer, new RegExp(id.replaceAll(".", "\\.")));
   }
+  assert.doesNotMatch(outer, /Install-WinGetPackage "astral-sh\.uv"/);
+  const localLiteLlm = windows.indexOf('$LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm');
+  const deferredPython = windows.indexOf('$PythonRuntimeNeeded = $LocalLiteLlmStatus');
+  const uvPrompt = windows.indexOf('Install-WinGetPackage "astral-sh.uv"');
+  assert.ok(localLiteLlm !== -1 && deferredPython > localLiteLlm && uvPrompt > deferredPython);
+  assert.match(windows, /if \(\$PythonRuntimeNeeded -and -not \(Test-PythonRuntime\)\)/);
   assert.match(outer, /--accept-source-agreements/);
   assert.match(outer, /--accept-package-agreements/);
   assert.match(outer, /Update-ProcessPath/);
@@ -268,6 +292,24 @@ test("native catalog adoption is inside both installer rollback transactions", (
     transaction.indexOf("const snapshotDir = beginSnapshot()") <
       transaction.indexOf('runStep("adoption")'),
     "adoption must start only after the shared rollback snapshot",
+  );
+});
+
+test("both managed installers share the local LiteLLM bypass gate", () => {
+  const posix = readFileSync(path.join(root, "bin", "install"), "utf8");
+  const windows = readFileSync(path.join(root, "install.ps1"), "utf8");
+
+  assert.match(posix, /src\/install-plan\.mjs local-litellm/);
+  assert.match(windows, /src\/install-plan\.mjs local-litellm/);
+  assert.match(posix, /Selected providers bypass local LiteLLM; skipping the Python install\./);
+  assert.match(windows, /Selected providers bypass local LiteLLM; skipping the Python install\./);
+  assert.ok(
+    posix.indexOf("src/install-plan.mjs local-litellm") <
+      posix.indexOf("uv pip install --python .venv/bin/python --require-hashes"),
+  );
+  assert.ok(
+    windows.indexOf("src/install-plan.mjs local-litellm") <
+      windows.indexOf("uv pip install --python $Python --require-hashes"),
   );
 });
 

@@ -16,18 +16,22 @@ Codex Router работает локально на Mac, Windows PC или Linux
 ```mermaid
 flowchart LR
   C["Codex App или CLI"] -->|"Responses API через loopback"| R["Codex Router :4102"]
-  R -->|"внутренний ключ"| L["Локальный LiteLLM adapter :4100"]
-  L -->|"Responses или Chat Completions для каждой модели"| F["Credential forwarder :4103"]
+  R -->|"direct Responses"| F["Credential forwarder :4103"]
+  R -.->|"bridge для другого provider, когда нужен"| L["Локальный LiteLLM adapter :4100"]
+  L -.->|"Responses или Chat Completions для каждой модели"| F
   F -->|"virtual key пользователя"| G["LiteLLM gateway пользователя"]
   G --> M["Модели, разрешённые ключу"]
 ```
 
-Локальный adapter направляет каждую модель через объявленный для неё
-OpenAI-compatible surface: по умолчанию Chat Completions, либо Responses после
-явного выбора. Credential forwarder удаляет заголовки идентификации Codex и
-ChatGPT, добавляет только выбранный LiteLLM virtual key и отправляет запрос по
-сохранённому upstream URL. Нативные GPT-модели обходят этот маршрут и
-продолжают работать через обычный Codex backend.
+Responses-native модели из **Your LiteLLM Gateway** Router отправляет прямо на
+Responses endpoint gateway. Chat Completions модели идут через локальный
+adapter, который сохраняет корректный перевод инструментов и истории Codex.
+Router запускает adapter, когда он нужен хотя бы одной выбранной модели, и
+использует для каждой модели объявленный OpenAI-compatible surface.
+Credential forwarder удаляет заголовки идентификации Codex и ChatGPT, добавляет
+только выбранный LiteLLM virtual key и отправляет запрос по сохранённому
+upstream URL. Нативные GPT-модели обходят внешний маршрут и продолжают работать
+через обычный Codex backend.
 
 ## Интерактивная установка
 

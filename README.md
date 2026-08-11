@@ -51,6 +51,23 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
 
+### Testing the public beta
+
+`main` remains the normal install channel. To test an upcoming public release
+on a separate test computer before it is promoted to `main`, download the
+installer from `beta` and explicitly select that channel:
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
+```
+
+The installer accepts only `main` (the default) and `beta`. A beta test never
+embeds a gateway URL or key; it asks for both locally. While testing beta,
+rerun this same command to update it — the normal in-checkout updater follows
+`main` by design.
+
 These quick-install commands select only **Your LiteLLM Gateway**, then ask the
 user to enter their own OpenAI-compatible URL visibly and restricted virtual
 key through a hidden prompt. No operator endpoint or key is embedded in the
@@ -58,21 +75,29 @@ installer. To open the full provider chooser instead, omit
 `--providers litellm-gateway` on macOS/Linux or `-Providers litellm-gateway` on
 Windows.
 
-On Windows, guided setup checks Git, Node.js, and `uv`/Python before changing
-Codex. When a prerequisite is missing it offers to install the exact package
-through WinGet and continues in the same PowerShell process after explicit
-confirmation. Automatic setup never installs a system prerequisite.
+On Windows, guided setup checks Git and Node.js before changing Codex. It asks
+for `uv`/Python only after the selected providers prove that a local LiteLLM
+bridge is needed. When a prerequisite is missing it offers to install the
+exact package through WinGet and continues in the same PowerShell process after
+explicit confirmation. Automatic setup never installs a system prerequisite.
 
 The setup detects existing authentication, asks for a custom LiteLLM URL with
 visible input, prompts invisibly for provider credentials, installs a per-user
 background service, and verifies every local layer. It never makes a paid test
 request unless `--smoke-test` is explicitly selected.
 
+For **Your LiteLLM Gateway**, only models explicitly declared as
+Responses-native use the direct gateway path. Curated Chat Completions models
+use the local Python/LiteLLM adapter so Codex tools and history are translated
+correctly. The installer starts or installs that adapter only when the selected
+models require it.
+
 Requirements:
 
 - The Codex App or CLI.
 - Node.js 22.19 or newer; Node.js 24 LTS is recommended.
-- `uv`, or Python 3.10+ with `venv` (guided Windows setup can install `uv`).
+- `uv`, or Python 3.10+ with `venv`, when a selected provider needs the local
+  LiteLLM bridge (guided Windows setup can install `uv`).
 - Git for the managed one-command checkout and rollback (guided Windows setup
   can install it).
 
@@ -175,6 +200,10 @@ terminal closure and is available to launchd, systemd, and Windows Task
 Scheduler. `CODEX_ROUTER_LITELLM_BASE_URL` can temporarily override it for a
 foreground command. Keep the virtual key restricted by model, budget, rate,
 and concurrency in LiteLLM; never reuse an administrator or master key.
+When `litellm-gateway` is the only selected provider, its explicitly
+Responses-native models bypass the local LiteLLM adapter and go through the
+credential forwarder directly to that endpoint. Chat Completions models still
+use the local adapter; this preserves Codex tool and conversation translation.
 See the [complete LiteLLM gateway guide](docs/LITELLM-GATEWAY.md) for request
 flow, local state, security boundaries, updates, and platform verification.
 
@@ -1133,23 +1162,27 @@ replace them.
 
 ```mermaid
 flowchart LR
-  C["Codex Responses :4102"] --> L1["LiteLLM :4100"]
+  C["Codex Responses :4102"] --> R["Router"]
+  R -->|"direct litellm-gateway Responses"| A1["API keys :4103"]
+  R -->|"translation needed"| L1["LiteLLM :4100"]
   L1 --> K1["Kimi OAuth :4101"]
-  L1 --> A1["API keys :4103"]
+  L1 --> A1
   K1 --> P["External providers"]
   A1 --> P
 ```
 
 Codex sends the Responses API.
-LiteLLM translates that contract to each provider's native protocol,
+LiteLLM translates that contract when a selected provider needs a local bridge,
 including OpenAI-compatible Chat Completions and Anthropic Messages, with
-streaming and tool-call shapes preserved. Every listener binds to `127.0.0.1`.
+streaming and tool-call shapes preserved. Direct `litellm-gateway` models skip
+that hop when the external gateway provides their Responses route. Every
+listener binds to `127.0.0.1`.
 
 The router authenticates the caller before reading model traffic and
-passes only a random internal key to LiteLLM. The final forwarder discards
-that key and injects only the selected provider credential. Browser-originated
-requests are rejected, secrets are never exposed by public health routes, and
-network-facing errors are sanitized.
+passes only a random internal key to local components. The final forwarder
+discards that key and injects only the selected provider credential.
+Browser-originated requests are rejected, secrets are never exposed by public
+health routes, and network-facing errors are sanitized.
 
 Codex still owns the agent loop, tools, permissions, files, plugins,
 skills, MCP servers, and conversation state. The router handles model inference

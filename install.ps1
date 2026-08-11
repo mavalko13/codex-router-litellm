@@ -5,6 +5,11 @@ param(
   [switch]$ForceDeps,
   [ValidateSet("codex")]
   [string]$Target = "codex",
+  # The public release channel.  Keep this deliberately small: accepting an
+  # arbitrary Git ref here would turn a convenient bootstrap option into a
+  # ref-injection surface for a script commonly run from the network.
+  [ValidateSet("main", "beta")]
+  [string]$Branch = "main",
   [switch]$Guided,
   [switch]$Auto,
   [string]$Providers,
@@ -167,9 +172,6 @@ if (-not $CheckoutInstall) {
   Install-WinGetPackage "OpenJS.NodeJS.LTS" "Node.js 24 LTS" {
     Test-NodeVersion
   } "Install Node.js 24 LTS from https://nodejs.org/."
-  Install-WinGetPackage "astral-sh.uv" "uv with managed Python 3.12" {
-    Test-PythonRuntime
-  } "Install uv from https://docs.astral.sh/uv/."
   Assert-Command "npm" "npm is included with Node.js."
 
   if (Test-RouterCheckout $ScriptDirectory) {
@@ -200,35 +202,32 @@ if (-not $CheckoutInstall) {
       # rollback below), where `branch --show-current` prints nothing. A native
       # command with no output yields $null, and in Windows PowerShell 5.1
       # [string]$null stays $null, so guard explicitly before calling Trim().
-      $Branch = & git -C $InstallDir branch --show-current
-      if ($null -eq $Branch) { $Branch = "" }
-      $Branch = [string]$Branch.Trim()
-      if ($Branch -ne "main") {
-        if (-not $Branch) {
-          # Git writes a successful branch-switch notice to stderr. Redirecting
-          # native stderr under Windows PowerShell 5.1 turns that notice into a
-          # terminating NativeCommandError while $ErrorActionPreference is Stop.
-          # --quiet suppresses success chatter without hiding a real failure;
-          # $LASTEXITCODE remains the source of truth below.
-          & git -C $InstallDir switch --quiet main
-          if ($LASTEXITCODE -ne 0) {
-            throw "$InstallDir is in a detached HEAD state and could not be restored to main; run 'git switch main' there and retry."
-          }
-          $Branch = & git -C $InstallDir branch --show-current
-          if ($null -eq $Branch) { $Branch = "" }
-          $Branch = [string]$Branch.Trim()
+      $CurrentBranch = & git -C $InstallDir branch --show-current
+      if ($null -eq $CurrentBranch) { $CurrentBranch = "" }
+      $CurrentBranch = [string]$CurrentBranch.Trim()
+      if ($CurrentBranch -ne $Branch) {
+        # A shallow checkout made with -Branch beta has only that branch until
+        # this fetch.  Fetch the exact allowlisted branch, then attach/reset the
+        # local branch to the remote after the tracked-edit guard above passed.
+        & git -C $InstallDir fetch --quiet --depth 1 origin $Branch
+        if ($LASTEXITCODE -ne 0) { throw "Unable to fetch the requested $Branch branch." }
+        # --quiet avoids PowerShell 5.1 treating Git's success chatter on
+        # stderr as a terminating NativeCommandError.  $LASTEXITCODE remains
+        # the authoritative failure signal.
+        & git -C $InstallDir checkout --quiet -B $Branch "origin/$Branch"
+        if ($LASTEXITCODE -ne 0) {
+          throw "$InstallDir could not switch to the requested $Branch branch."
         }
-        if ($Branch -ne "main") { throw "$InstallDir must be on its main branch to update." }
       }
       $PreviousRevision = (& git -C $InstallDir rev-parse HEAD).Trim()
       & git -C $InstallDir update-ref refs/codex-router/rollback $PreviousRevision
-      & git -C $InstallDir pull --ff-only origin main
+      & git -C $InstallDir pull --ff-only origin $Branch
       if ($LASTEXITCODE -ne 0) { throw "Unable to fast-forward the managed checkout." }
     } elseif (Test-Path $InstallDir) {
       throw "$InstallDir exists and is not a Codex Router checkout."
     } else {
       New-Item -ItemType Directory -Force -Path (Split-Path $InstallDir) | Out-Null
-      & git clone --depth 1 $RepositoryUrl $InstallDir
+      & git clone --depth 1 --branch $Branch $RepositoryUrl $InstallDir
       if ($LASTEXITCODE -ne 0) { throw "Unable to clone Codex Router." }
     }
     $Repository = $InstallDir
@@ -258,7 +257,7 @@ if (-not $CheckoutInstall) {
   }
 
   if ($PrepareOnly) {
-    & (Join-Path $Repository "install.ps1") -CheckoutInstall -PrepareOnly -Target $Target
+    & (Join-Path $Repository "install.ps1") -CheckoutInstall -PrepareOnly -Target $Target -Branch $Branch
     exit $LASTEXITCODE
   }
 
@@ -337,7 +336,27 @@ try {
   }
 
   $Python = Join-Path $ScriptDirectory ".venv\Scripts\python.exe"
-  if ((Get-InstallStep "python-deps") -eq "skip") {
+  $LocalLiteLlmStatus = "required"
+  try {
+    $LocalLiteLlmStatus = (& node src/install-plan.mjs local-litellm 2>$null | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0) { $LocalLiteLlmStatus = "required" }
+  } catch {
+    $LocalLiteLlmStatus = "required"
+  }
+  $PythonRuntimeNeeded = $LocalLiteLlmStatus -ne "not-required" -and
+    (Get-InstallStep "python-deps") -ne "skip"
+  if ($PythonRuntimeNeeded -and -not (Test-PythonRuntime)) {
+    # Provider selection has completed by this point.  Do not require or offer
+    # Python for the direct LiteLLM Gateway path, but preserve the guided
+    # WinGet recovery for any provider that needs the local bridge.
+    Install-WinGetPackage "astral-sh.uv" "uv with managed Python 3.12" {
+      Test-PythonRuntime
+    } "Install uv from https://docs.astral.sh/uv/."
+  }
+
+  if ($LocalLiteLlmStatus -eq "not-required") {
+    Write-Host "Selected providers bypass local LiteLLM; skipping the Python install."
+  } elseif ((Get-InstallStep "python-deps") -eq "skip") {
     Write-Host "LiteLLM already matches the pinned versions; skipping the Python install."
   } elseif (Get-Command "uv" -ErrorAction SilentlyContinue) {
     if (-not (Test-Path $Python)) {

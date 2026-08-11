@@ -47,17 +47,36 @@ Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway
 ```
 
+### Тестирование публичной beta
+
+`main` остаётся обычным каналом установки. Чтобы проверить следующий публичный
+релиз на отдельном тестовом компьютере до перевода в `main`, загрузите
+установщик из `beta` и явно выберите этот канал:
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/mavalko13/codex-router-litellm/beta/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -Providers litellm-gateway -Branch beta
+```
+
+Установщик принимает только `main` (по умолчанию) и `beta`. Адрес gateway и
+ключ не зашиваются в beta: оба значения вводятся локально. Во время beta-теста
+для обновления повторяйте эту же команду: обычный updater внутри checkout
+намеренно следует за `main`.
+
 Требования:
 
 - установленный Codex App или Codex CLI;
 - Node.js 22.19+; рекомендуется Node.js 24 LTS;
-- `uv` либо Python 3.10+ с `venv`;
+- `uv` либо Python 3.10+ с `venv`, если выбранному провайдеру нужен локальный
+  LiteLLM bridge;
 - Git для managed checkout, обновления и rollback.
 
-В Windows guided setup проверяет Git, Node.js и `uv`/Python до изменения
-Codex. Если чего-то не хватает, он предлагает установить точный пакет через
-WinGet и продолжает в том же PowerShell после явного подтверждения. В режиме
-`-Auto` системные зависимости никогда не устанавливаются автоматически.
+В Windows guided setup проверяет Git и Node.js до изменения Codex. `uv`/Python
+он запрашивает только после выбора провайдера, которому нужен локальный
+LiteLLM bridge. Если чего-то не хватает, он предлагает установить точный пакет
+через WinGet и продолжает в том же PowerShell после явного подтверждения. В
+режиме `-Auto` системные зависимости никогда не устанавливаются автоматически.
 
 Эти команды сразу выбирают только **Your LiteLLM Gateway**, поэтому общего
 списка провайдеров нет. Установщик всё равно попросит пользователя ввести свой
@@ -67,6 +86,12 @@ OpenAI-compatible URL видимым текстом, а restricted virtual key �
 уберите `--providers litellm-gateway` в macOS/Linux или
 `-Providers litellm-gateway` в Windows. Платный smoke test запускается только
 при явном согласии.
+
+Для **Your LiteLLM Gateway** прямой путь используют только модели, явно
+объявленные как Responses-native. Curated Chat Completions модели идут через
+локальный Python/LiteLLM adapter, чтобы корректно переводились инструменты и
+история Codex. Установщик запускает или устанавливает adapter только когда он
+нужен выбранным моделям.
 
 После установки выберите модели:
 
@@ -122,6 +147,10 @@ picker только при запуске, поэтому для появлен�
 `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое значение должно быть целым
 числом не меньше `60000` мс. Startup discovery и ручной `curate-models`
 остаются доступны.
+
+При одном `litellm-gateway` служба публикует `merged-models.json` без
+локального LiteLLM bridge; при добавлении других routed providers сначала
+публикуются LiteLLM routes, затем picker catalog.
 
 ## Безопасность
 

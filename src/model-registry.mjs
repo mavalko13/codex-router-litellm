@@ -187,6 +187,9 @@ function loadRegistry() {
       ) {
         fail(`provider ${provider.id} has an invalid importLiveModelMetadata flag`);
       }
+      if (provider.directResponses !== undefined && typeof provider.directResponses !== "boolean") {
+        fail(`provider ${provider.id} has an invalid directResponses flag`);
+      }
       if (
         provider.defaultApiSurface !== undefined &&
         !DECLARED_API_SURFACES.includes(provider.defaultApiSurface)

@@ -8,10 +8,9 @@ import test from "node:test";
 // curated models (including any local Ollama models the operator has checked)
 // must not leak in. Point the overlay at an empty directory before the registry
 // loads, which is why the imports below are dynamic.
-process.env.MODEL_ROUTER_USER_MODELS = path.join(
-  mkdtempSync(path.join(os.tmpdir(), "registry-test-")),
-  "user-models.json",
-);
+const stateDir = mkdtempSync(path.join(os.tmpdir(), "registry-test-"));
+process.env.MODEL_ROUTER_USER_MODELS = path.join(stateDir, "user-models.json");
+process.env.MODEL_ROUTER_LIVE_MODEL_METADATA = path.join(stateDir, "live-model-metadata.json");
 
 const { renderLiteLlmConfig } = await import("../src/litellm-config.mjs");
 const {
@@ -161,6 +160,7 @@ test("provider registry exposes configured API and OAuth model families", () => 
   assert.equal(liteLlmGateway.baseUrl, "http://127.0.0.1:4000/v1");
   assert.equal(liteLlmGateway.baseUrlEnv, "CODEX_ROUTER_LITELLM_BASE_URL");
   assert.equal(liteLlmGateway.configurableBaseUrl, true);
+  assert.equal(liteLlmGateway.directResponses, true);
   assert.equal(liteLlmGateway.credential.file, "litellm-gateway-api-key.secret");
   assert.equal(MODELS.some(({ provider }) => provider === "litellm-gateway"), false);
   const clinepass = PROVIDERS.get("clinepass");

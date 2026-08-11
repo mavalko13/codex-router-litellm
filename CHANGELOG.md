@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **Direct LiteLLM Gateway forwarding now respects each model's API surface.**
+  A trusted gateway's `directResponses` capability applies only to models
+  declared as Responses-native. Chat Completions models retain the local
+  LiteLLM bridge, which translates the Codex toolset and conversation history
+  instead of sending incompatible native tool definitions upstream.
+
+- **Windows no longer asks for Python before it knows Python is needed.** The
+  bootstrap now verifies Git and Node.js first, completes provider selection,
+  then offers `uv` only when a selected route requires the local LiteLLM
+  bridge. A Responses-native-only selection skips that prompt and its Python
+  dependency tree entirely.
+
+- **Public beta builds can now be installed deliberately for Windows testing.**
+  The bootstrap installers accept only the explicit `main` (default) and
+  `beta` channels, clone or safely switch the managed checkout to that channel,
+  and keep the LiteLLM Gateway URL and virtual key interactive and local. This
+  makes a pre-release test possible without making an arbitrary Git reference
+  executable or promoting the build to `main`.
+
+- **Responses-native LiteLLM Gateway routes can bypass the local Python
+  proxy.** A trusted gateway's explicitly Responses-native models receive
+  Codex requests through the protected credential forwarder, avoiding the
+  redundant local LiteLLM hop. Models that need protocol translation
+  automatically retain the local bridge; direct forwarding is a validated
+  per-model capability, never a provider-ID exception.
+
 - **Reinstalling on Windows no longer leaves the previous router running as an
   orphan.** Task Scheduler ended the hidden `wscript.exe` action but left its
   `cmd.exe` and `node.exe` descendants alive. The replacement then lost its
@@ -11,13 +37,12 @@
   wait for it to disappear, replace the launchers, and propagate any real
   registration failure instead of claiming success.
 
-- **Windows service-only pull requests no longer rebuild every desktop target.**
-  Required check names remain intact for branch protection, but macOS, Linux,
-  and desktop jobs finish as explicit no-ops while the Windows job runs the
-  service, installer, syntax, and PowerShell parser regressions. Broader source
-  changes continue to run the complete cross-platform matrix. Windows test jobs
-  also have a five-minute hard timeout, and temporary process paths are
-  canonicalized before the process-tree regression runs.
+- **GitHub is now a short Windows integration gate, not the main test machine.**
+  Pull requests into `beta` and `main` run only the Windows service, installer,
+  JavaScript syntax, and PowerShell parser regressions. The full Node suite,
+  dependency audit, POSIX checks, and optional Desktop build are explicit local
+  gates via `npm run verify:local` and `npm run verify:local:full`. The
+  expensive Python lock matrix is manual-only; CodeQL remains automatic.
 
 - **A successful Windows checkout recovery is no longer reported as an
   installation failure.** Git writes branch-switch confirmations to stderr;

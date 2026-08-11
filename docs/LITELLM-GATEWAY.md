@@ -16,18 +16,22 @@ Codex source code.
 ```mermaid
 flowchart LR
   C["Codex App or CLI"] -->|"Responses API on loopback"| R["Codex Router :4102"]
-  R -->|"internal key"| L["Local LiteLLM adapter :4100"]
-  L -->|"Per-model Responses or Chat Completions"| F["Credential forwarder :4103"]
+  R -->|"direct Responses"| F["Credential forwarder :4103"]
+  R -.->|"translation bridge when another provider needs it"| L["Local LiteLLM adapter :4100"]
+  L -.->|"Per-model Responses or Chat Completions"| F
   F -->|"operator virtual key"| G["Operator LiteLLM gateway"]
   G --> M["Models allowed by that key"]
 ```
 
-The local adapter routes each model through its declared OpenAI-compatible
-surface: Chat Completions by default, or Responses when explicitly selected.
+Responses-native models from **Your LiteLLM Gateway** go directly to the
+gateway's Responses endpoint. Chat Completions models use the local adapter,
+which preserves Codex tool and history translation. The Router starts that
+adapter whenever any selected model requires it, then uses each model's
+declared OpenAI-compatible surface there.
 The credential forwarder removes Codex and ChatGPT identity headers, injects
 only the selected LiteLLM virtual key, and sends the request to the saved
-upstream URL. Native GPT models bypass this route and continue to use Codex
-normally.
+upstream URL. Native GPT models bypass this external route and continue to use
+Codex normally.
 
 ## Interactive installation
 
