@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Subagent model references now follow the live catalog safely.** A catalog
+  refresh validates `agents.default_subagent_model` and explicit models in
+  Codex role files. When a removed routed slug has one unambiguous successor on
+  the same provider, such as the corresponding `-no-fallback` alias, Router
+  updates only that assignment and preserves the rest of the file. References
+  with no safe successor are left untouched and reported as a failing doctor
+  check with the exact file and model, instead of making every `spawn_agent`
+  call fail later with `Unknown model`. The global default is migrated only to
+  a picker-visible v2 model; explicit Router role files may use the exact v1
+  `-no-fallback` alias. Symlinks and other non-regular files are never replaced.
+
 - **Routed tools now use the OpenAI Responses schema at the upstream
   boundary.** Codex keeps its native `inputSchema` definitions, while the
   Router sends their equivalent as `parameters` to LiteLLM and other

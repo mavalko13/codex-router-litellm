@@ -140,6 +140,16 @@ Watcher игнорирует остальные локальные state files, 
 не может запустить его повторно. Если filesystem watch недоступен, текущие
 service и catalog сохраняются, а periodic check остаётся fallback.
 
+При каждом обновлении каталога Router также проверяет
+`agents.default_subagent_model` и явные `model` в role-файлах Codex.
+Устаревший routed slug меняется только тогда, когда тот же провайдер публикует
+ровно одного однозначного преемника. Глобальный default должен быть видимой v2
+моделью; явный Router role-файл может перейти на точный v1 alias
+`-no-fallback`. Если безопасной замены нет, Router не выбирает другую модель
+наугад: `doctor` показывает точный файл и устаревшую ссылку, а остальные поля и
+инструкции роли сохраняются. Symlink и другие non-regular файлы Router не
+заменяет.
+
 При одном `litellm-gateway` служба публикует `merged-models.json` без
 локального LiteLLM bridge; при добавлении других routed providers сначала
 публикуются LiteLLM routes, затем picker catalog.

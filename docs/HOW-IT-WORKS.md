@@ -234,3 +234,15 @@ has select-all and unselect-all bulk actions. `bin/multi-agent on` still
 promotes every picker-visible selected model, and `bin/multi-agent off`
 restores the conservative set. The checked-in provider registry is never
 changed by these switches.
+
+Every catalog refresh also validates the model references Codex uses for
+collaboration: `agents.default_subagent_model` in `config.toml` and explicit
+`model` assignments in role files under `~/.codex/agents`. A reference that is
+still present is preserved. Router automatically changes a reference only when
+the new catalog contains one unambiguous successor on the same provider. The
+global default is eligible only for a picker-visible v2 successor. An explicit
+Router role may instead move from `provider/model` to the exact v1
+`provider/model-no-fallback` alias; all other fields and instructions remain
+unchanged. Symlinks and non-regular files are read-only. If there is no safe
+choice, Router does not guess: `doctor` fails with the exact stale reference so
+the operator can choose a replacement before delegating work.

@@ -235,7 +235,13 @@ Setup performs these operations in order:
 8. Adds the marked capability-bearing base URL and catalog block. When the user
    has not set an agent concurrency limit, it also configures six spawned-agent
    slots so native Kimi/Grok/GPT collaboration does not remain on Codex's small
-   v2 default. Existing `[agents]` limits are preserved.
+   v2 default. Existing `[agents]` limits are preserved. The completed catalog
+   is then used to validate the default subagent model and explicit role-model
+   assignments. Only an unambiguous successor on the same provider is migrated
+   automatically: a global default must remain picker-visible v2, while an
+   explicit Router role may use the exact v1 `-no-fallback` alias. Unresolved
+   references are reported by `doctor` rather than silently redirected to an
+   unrelated model; symlinks and non-regular files are never replaced.
 9. Protects the Codex config and its backup for the current user.
 10. Installs the platform's per-user background service.
 11. Waits for every local layer to report its expected service identity.
