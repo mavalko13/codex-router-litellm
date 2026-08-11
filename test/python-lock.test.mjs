@@ -135,17 +135,15 @@ test("the lock workflow derives its install command from the installer", () => {
   assert.deepEqual(handWritten, [], "the workflow must not spell the install command itself");
 });
 
-// A paths filter that stops covering an input turns the job off silently for
-// exactly the change that needed it.
-test("the lock workflow is gated on every input that can invalidate the lock", () => {
+// The full install matrix is intentionally not a per-push cost. Contributors
+// run it locally for every relevant change; GitHub exposes it as an explicit
+// dispatch when a cross-platform hosted recheck is warranted.
+test("the lock workflow is manual-only", () => {
   const workflow = readFileSync(repoFile(LOCK_WORKFLOW), "utf8");
-  const gated = ["requirements/**", ...Object.values(INSTALLER_SCRIPTS), "src/install-plan.mjs"];
-  for (const input of gated) {
-    assert.ok(workflow.includes(`"${input}"`), `${LOCK_WORKFLOW} does not run when ${input} changes`);
+  assert.match(workflow, /^\s*workflow_dispatch:/m, `${LOCK_WORKFLOW} must stay manually runnable`);
+  for (const trigger of ["push", "pull_request", "schedule"]) {
+    assert.doesNotMatch(workflow, new RegExp(`^\\s+${trigger}:`, "m"));
   }
-  // Paths filters cannot see a wheel PyPI yanked under an unchanged lock, so
-  // the schedule is part of the gate rather than a nicety.
-  assert.match(workflow, /^\s*schedule:/m, `${LOCK_WORKFLOW} must also run on a schedule`);
 });
 
 test("a regenerated lock reinstalls even when the pins are unchanged", () => {
