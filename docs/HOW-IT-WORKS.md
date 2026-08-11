@@ -59,6 +59,18 @@ sequenceDiagram
   end
 ```
 
+## Tool schema compatibility
+
+Codex declares its native function tools with `inputSchema`. Before a routed
+Responses request leaves the Router, the Router creates a separate outbound
+copy and writes that schema as OpenAI-compatible `parameters`, removing only
+the incompatible field from the copy. Existing `parameters` are preserved.
+
+This happens after namespace tools have been merged or flattened, so it covers
+ordinary functions, nested namespace functions, and the local LiteLLM
+Responses-to-Chat bridge. The original Desktop request is never mutated; tool
+calls and execution still belong to Codex.
+
 ## One registry, multiple consumers
 
 The split registry tree under `config/` supplies the model mapping used by the
