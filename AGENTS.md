@@ -80,19 +80,26 @@ user.
    selected credentials must be `OK`. Unselected credentials may be `WARN`.
 9. If a managed layer fails, use `model-router codex doctor --fix`; add
    `--migrate-known` only for a recognized older installation. Repair rebuilds
-   the Node and Python dependencies unconditionally, unlike a normal install or
-   update, which skips whichever dependency step already matches its
-   fingerprint. Force that rebuild by hand with `bin/install --force-deps`
+   the Node dependencies unconditionally and Python only when the selected
+   providers need the local bridge, unlike a normal install or update, which
+   skips whichever dependency step already matches its fingerprint. Force that
+   rebuild by hand with `bin/install --force-deps`
    (`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckoutInstall -ForceDeps`) when an environment looks
-   corrupted rather than merely out of date. If repair still fails, create
-   `bin/support-bundle` and report its path without uploading it.
+   corrupted rather than merely out of date. In direct-only mode, `--force-deps`
+   still skips Python because there is no local LiteLLM bridge to rebuild. If
+   repair still fails, create `bin/support-bundle` and report its path without
+   uploading it.
 10. Do not terminate Codex. Tell the user to fully quit it, reopen it, create a
     new task, and choose the new model.
 
-## The Python gateway is installed from a hash-verified lock
+## The Python gateway is installed from a hash-verified lock when required
 
-The router's gateway is LiteLLM, so every install executes a large Python
-dependency tree. That tree is pinned and hashed rather than re-resolved.
+The router uses LiteLLM as the local bridge for providers that need protocol
+translation, so bridge-enabled installs execute a large Python dependency tree.
+An exclusive `litellm-gateway` selection whose external endpoint supports
+Responses for its text models skips that Python tree and routes through the API
+forwarder instead. When Python is installed, it is pinned and hashed rather
+than re-resolved.
 
 1. `requirements/python.txt` is the lock: the full transitive closure of
    `PYTHON_REQUIREMENTS` in `src/install-plan.mjs`, every distribution pinned

@@ -90,7 +90,7 @@ test("background service definitions render for macOS, Linux, and Windows", () =
     const windows = render("service-windows.mjs", "win32", testRoot);
     assert.match(windows, /@echo off\r?\n/);
     assert.match(windows, /set "CODEX_ROUTER_STATE_DIR=/);
-    assert.match(windows, /litellm|start\.mjs/);
+    assert.match(windows, /start\.mjs/);
     assert.match(windows, /if "%router_status%"=="75" goto router_restart/);
     // The Python gateway must run with UTF-8 output even when the host
     // console code page is not UTF-8 (see service-windows.mjs).

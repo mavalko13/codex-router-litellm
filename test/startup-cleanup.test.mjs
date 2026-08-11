@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { callerBaseUrl } from "../src/caller-auth.mjs";
 import { freePort } from "./port-pool.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -87,6 +88,23 @@ function waitForStartupExit(child, readErrors) {
   });
 }
 
+async function waitForStartupHealth(url, child, readErrors) {
+  const deadline = Date.now() + STARTUP_STALL_MS;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`startup exited early (${child.exitCode}):\n${readErrors()}`);
+    }
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response;
+    } catch {
+      // Service not listening yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out waiting for ${url}:\n${readErrors()}`);
+}
+
 // The stall watchdog is the real guard and gives a diagnosable message; this
 // outer timeout only backstops a child that hangs while still chattering. It
 // has to clear a loaded run (~19 s) plus one full stall window (30 s), so 20 s
@@ -139,6 +157,91 @@ test("startup failure terminates services that already became healthy", { timeou
     }
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("startup skips local LiteLLM with an exclusive litellm-gateway Chat model selection", { timeout: 120_000 }, async () => {
+  const ports = await Promise.all(Array.from({ length: 5 }, () => freePort()));
+  assert.equal(new Set(ports).size, ports.length);
+  const [routerPort, gatewayPort, oauthPort, apiPort, grokOauthPort] = ports;
+  const rootDir = mkdtempSync(path.join(os.tmpdir(), "model-router-startup-direct-"));
+  const stateDir = path.join(rootDir, "state");
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(stateDir, "internal-secret"), "startup-internal-key-with-sufficient-length\n", { mode: 0o600 });
+  writeFileSync(path.join(stateDir, "caller-secret"), "startup-caller-key-with-sufficient-length\n", { mode: 0o600 });
+  writeFileSync(
+    path.join(stateDir, "enabled-providers.json"),
+    `${JSON.stringify({ version: 1, providers: ["litellm-gateway"] })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(path.join(stateDir, "litellm-gateway-api-key.secret"), "test-virtual-key\n", {
+    mode: 0o600,
+  });
+  writeFileSync(
+    path.join(stateDir, "user-models.json"),
+    `${JSON.stringify({
+      version: 1,
+      models: [
+        {
+          slug: "litellm-gateway/ollama-cloud-kimi-k2-7-code",
+          gatewayModel: "litellm-gateway-ollama-cloud-kimi-k2-7-code",
+          upstreamModel: "ollama-cloud-kimi-k2-7-code",
+          provider: "litellm-gateway",
+          listed: true,
+          apiSurface: "chat-completions",
+          displayName: "Kimi Code",
+          description: "External LiteLLM gateway Chat model.",
+          priority: 1,
+          defaultEffort: "high",
+          reasoningLevels: [{ effort: "high", description: "Adaptive reasoning" }],
+          contextWindow: 131072,
+          autoCompact: 110000,
+          inputModalities: ["text"],
+          compHash: "litellm-gateway-ollama-cloud-kimi-k2-7-code-test",
+        },
+      ],
+    })}\n`,
+    { mode: 0o600 },
+  );
+
+  const child = spawn(process.execPath, [path.join(root, "src", "start.mjs")], {
+    cwd: root,
+    env: {
+      ...process.env,
+      MODEL_ROUTER_TARGET: "codex",
+      MODEL_ROUTER_STATE_DIR: stateDir,
+      MODEL_ROUTER_PORT: String(routerPort),
+      MODEL_ROUTER_GATEWAY_PORT: String(gatewayPort),
+      MODEL_ROUTER_OAUTH_PORT: String(oauthPort),
+      MODEL_ROUTER_API_PORT: String(apiPort),
+      MODEL_ROUTER_GROK_OAUTH_PORT: String(grokOauthPort),
+      MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS: "0",
+      MODEL_ROUTER_LITELLM_BIN: path.join(rootDir, "missing-litellm"),
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let errors = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    errors += chunk;
+  });
+
+  try {
+    await waitForStartupHealth(`http://127.0.0.1:${routerPort}/health`, child, () => errors);
+    const response = await fetch(
+      `${callerBaseUrl(routerPort, "startup-caller-key-with-sufficient-length")}/health`,
+    );
+    const body = await response.text();
+    assert.equal(response.status, 200, body);
+    const payload = JSON.parse(body);
+    assert.equal(payload.gateway.enabled, false);
+    assert.equal(await portIsClosed(gatewayPort), true);
+    assert.doesNotMatch(errors, /LiteLLM is not installed/);
+    assert.doesNotMatch(errors, /LiteLLM gateway/);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    await waitForStartupExit(child, () => errors).catch(() => undefined);
     rmSync(rootDir, { recursive: true, force: true });
   }
 });

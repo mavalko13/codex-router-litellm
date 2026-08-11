@@ -185,6 +185,11 @@ fully quit and reopen Codex. See the
 [complete LiteLLM gateway guide](LITELLM-GATEWAY.md) for Windows equivalents,
 storage boundaries, and LiteLLM virtual-key restrictions.
 
+For an exclusive `litellm-gateway` selection, `/health` reports the local
+gateway as disabled and port `4100` should not be listening. Failures in that
+mode are remote endpoint, virtual-key, or `api-forwarder :4103` issues, not
+local LiteLLM startup issues.
+
 ## A provider changed its model IDs
 
 Compare the provider's official model-list endpoint with the registry:

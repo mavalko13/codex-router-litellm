@@ -12,6 +12,10 @@ import {
   requirementParts,
   stepStatus,
 } from "../src/install-plan.mjs";
+import {
+  localLiteLlmRequiredForProviderIds,
+  localLiteLlmRequiredForSelection,
+} from "../src/local-litellm-mode.mjs";
 
 function checkout() {
   const root = mkdtempSync(path.join(tmpdir(), "install-plan-"));
@@ -55,6 +59,71 @@ test("a missing installation always runs its step", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("local LiteLLM is required only outside direct litellm-gateway mode", () => {
+  const litellmGateway = {
+    id: "litellm-gateway",
+    kind: "openai-compatible",
+    directResponses: true,
+  };
+  const deepseek = {
+    id: "deepseek",
+    kind: "openai-compatible",
+  };
+  const providers = new Map([
+    ["litellm-gateway", litellmGateway],
+    ["deepseek", deepseek],
+  ]);
+  const directModel = {
+    slug: "litellm-gateway/codex-gpt-5.5",
+    provider: "litellm-gateway",
+    apiSurface: "responses",
+    listed: true,
+  };
+  const chatOnlyModel = {
+    slug: "litellm-gateway/kimi-k2.7-code",
+    provider: "litellm-gateway",
+    apiSurface: "chat-completions",
+    listed: true,
+  };
+
+  assert.equal(localLiteLlmRequiredForProviderIds(["litellm-gateway"], providers), false);
+  assert.equal(localLiteLlmRequiredForProviderIds(["litellm-gateway", "deepseek"], providers), true);
+  assert.equal(localLiteLlmRequiredForProviderIds([], providers), true);
+
+  assert.equal(
+    localLiteLlmRequiredForSelection({
+      providerIds: ["litellm-gateway"],
+      models: [directModel],
+      providers,
+    }),
+    false,
+  );
+  assert.equal(
+    localLiteLlmRequiredForSelection({
+      providerIds: ["litellm-gateway"],
+      models: [directModel, chatOnlyModel],
+      providers,
+    }),
+    false,
+  );
+  assert.equal(
+    localLiteLlmRequiredForSelection({
+      providerIds: ["litellm-gateway"],
+      models: [],
+      providers,
+    }),
+    false,
+  );
+  assert.equal(
+    localLiteLlmRequiredForSelection({
+      providerIds: ["litellm-gateway", "deepseek"],
+      models: [directModel],
+      providers,
+    }),
+    true,
+  );
 });
 
 test("recorded steps are skipped until their inputs change", () => {

@@ -86,7 +86,10 @@ else
   node src/install-plan.mjs record node-deps
 fi
 
-if [ "$(install_step python-deps)" = skip ]; then
+local_litellm_status="$(node src/install-plan.mjs local-litellm 2>/dev/null || echo required)"
+if [ "$local_litellm_status" = not-required ]; then
+  echo "Selected providers bypass local LiteLLM; skipping the Python install."
+elif [ "$(install_step python-deps)" = skip ]; then
   echo "LiteLLM already matches the pinned versions; skipping the Python install."
 elif command -v uv >/dev/null 2>&1; then
   if [ ! -x .venv/bin/python ]; then

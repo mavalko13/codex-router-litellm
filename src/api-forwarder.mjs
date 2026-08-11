@@ -315,7 +315,12 @@ function normalizeBody(buffer, contentType, route) {
   }
   const apiSurface = effectiveApiSurface(model, provider);
   const expectedRoute = apiRouteForSurface(apiSurface);
-  if (route !== expectedRoute) {
+  // A trusted LiteLLM endpoint can expose Responses for every selected text
+  // route, including groups whose upstream provider speaks Chat Completions.
+  // This is an explicit provider capability, never an inferred provider ID;
+  // other providers remain fail-closed on their declared wire surface.
+  const directGatewayResponses = provider.directResponses === true && route === "/responses";
+  if (route !== expectedRoute && !directGatewayResponses) {
     const error = new Error(`Model ${model.gatewayModel} does not support ${route}.`);
     error.status = 400;
     throw error;

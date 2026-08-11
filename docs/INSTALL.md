@@ -17,7 +17,8 @@ This page covers the Codex target:
 Required software:
 
 - Node.js 22.19+ (Node.js 24 LTS recommended)
-- `uv`, or Python 3.10+ with `venv`
+- `uv`, or Python 3.10+ with `venv`, when the selected providers need the
+  local LiteLLM bridge
 - Git for managed one-command installation and rollback
 - At least one supported provider credential, or a local Ollama runtime
 
@@ -224,7 +225,9 @@ Setup performs these operations in order:
 1. Validates provider selection and credential presence.
 2. Detects other model-catalog owners and earlier Codex Router variants.
 3. With approval, snapshots and stops only recognized older variants.
-4. Installs locked Node dependencies and pinned LiteLLM in `.venv`.
+4. Installs locked Node dependencies. It installs pinned LiteLLM in `.venv`
+   only when the selected providers need the local bridge; an exclusive
+   `litellm-gateway` selection skips Python.
 5. Generates separate random Codex caller and internal-service keys.
 6. Captures the native Codex model catalog and adds only selected provider models.
 7. Generates gateway routes from the split registry tree under `config/`.

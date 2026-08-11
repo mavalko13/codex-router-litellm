@@ -51,7 +51,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex
 
 - установленный Codex App или Codex CLI;
 - Node.js 22.19+; рекомендуется Node.js 24 LTS;
-- `uv` либо Python 3.10+ с `venv`;
+- `uv` либо Python 3.10+ с `venv`, если выбранному провайдеру нужен локальный
+  LiteLLM bridge;
 - Git для managed checkout, обновления и rollback.
 
 В Windows guided setup проверяет Git, Node.js и `uv`/Python до изменения
@@ -67,6 +68,11 @@ OpenAI-compatible URL видимым текстом, а restricted virtual key �
 уберите `--providers litellm-gateway` в macOS/Linux или
 `-Providers litellm-gateway` в Windows. Платный smoke test запускается только
 при явном согласии.
+
+Если выбран только **Your LiteLLM Gateway**, Router направляет текстовые
+маршруты сразу на его OpenAI Responses endpoint: локальный Python/LiteLLM
+adapter не устанавливается и не запускается. Если затем выбрать провайдера,
+которому нужен bridge, он будет автоматически включён снова.
 
 После установки выберите модели:
 
@@ -122,6 +128,10 @@ picker только при запуске, поэтому для появлен�
 `MODEL_ROUTER_AUTO_CURATE_INTERVAL_MS=0`; другое значение должно быть целым
 числом не меньше `60000` мс. Startup discovery и ручной `curate-models`
 остаются доступны.
+
+При одном `litellm-gateway` служба публикует `merged-models.json` без
+локального LiteLLM bridge; при добавлении других routed providers сначала
+публикуются LiteLLM routes, затем picker catalog.
 
 ## Безопасность
 

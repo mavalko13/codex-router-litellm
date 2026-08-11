@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **An exclusive LiteLLM Gateway install no longer requires a local Python
+  proxy.** Trusted gateways that explicitly advertise direct Responses support
+  receive Codex requests through the protected credential forwarder, avoiding
+  the redundant local LiteLLM hop. Adding a provider that needs protocol
+  translation automatically restores the local bridge; direct forwarding is a
+  validated provider capability, never a provider-ID exception.
+
 - **Reinstalling on Windows no longer leaves the previous router running as an
   orphan.** Task Scheduler ended the hidden `wscript.exe` action but left its
   `cmd.exe` and `node.exe` descendants alive. The replacement then lost its
