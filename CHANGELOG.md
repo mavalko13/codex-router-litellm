@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Routed tools now use the OpenAI Responses schema at the upstream
+  boundary.** Codex keeps its native `inputSchema` definitions, while the
+  Router sends their equivalent as `parameters` to LiteLLM and other
+  OpenAI-compatible Responses endpoints. This covers both direct routes and
+  the local Responses-to-Chat bridge, preventing strict upstreams from
+  receiving an empty function schema.
+
 - **Public installation documentation now shows only the stable `main`
   channel.** The regular setup path stays focused on colleagues installing the
   released Router.

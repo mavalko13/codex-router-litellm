@@ -48,6 +48,7 @@ import {
   NamespaceToolCallTransform,
   flattenNamespacedHistory,
   flattenNamespaceTools,
+  normalizeToolSchemasForOpenAI,
 } from "./namespace-relay.mjs";
 import { mergeCodexAppTools } from "./codex-app-tools.mjs";
 import { activityMetadataFromHeaders } from "./codex-session-names.mjs";
@@ -1489,6 +1490,7 @@ async function handleResponses(request, response, requestUrl) {
       // (node_repl, peekaboo, github, ...). Chat-completions providers need
       // every namespace flattened into ordinary functions; the response
       // transform maps calls back to the client's native namespace shape.
+      let routedTools = payload.tools;
       if (provider?.protocol !== "openai-responses") {
         // Relay the app's full native toolset (threads, automations, app
         // navigation) to the provider. The client registers these tools with
@@ -1497,14 +1499,22 @@ async function handleResponses(request, response, requestUrl) {
         // definitions in so routed models see what native models see. The
         // router never executes these calls -- the app owns thread, automation,
         // and navigation state -- it only relays definitions and results.
-        const merged = mergeCodexAppTools(payload.tools);
-        if (merged.merged) payload.tools = merged.tools;
-        const flattened = flattenNamespaceTools(payload.tools);
+        const merged = mergeCodexAppTools(routedTools);
+        if (merged.merged) routedTools = merged.tools;
+        const flattened = flattenNamespaceTools(routedTools);
         namespacesFlattened = flattened.flattened;
         if (namespacesFlattened) {
-          payload.tools = flattened.tools;
+          routedTools = flattened.tools;
           flattenedNamespaces = flattened.namespaces;
         }
+      }
+      // Every routed request first crosses a Responses API boundary. LiteLLM's
+      // Responses -> Chat Completions bridge needs the OpenAI `parameters`
+      // spelling too, so normalize after any namespace merge/flattening and
+      // before serializing the routed copy. The transformer is immutable; the
+      // desktop's native `payload.tools` remains untouched for local dispatch.
+      if (Array.isArray(routedTools)) {
+        routedTools = normalizeToolSchemasForOpenAI(routedTools);
       }
       let routedInput = input;
       // The stored call history must use the same tool names as the tool
@@ -1516,6 +1526,7 @@ async function handleResponses(request, response, requestUrl) {
         ...payload,
         model: route.gatewayModel,
         input: routedInput,
+        ...(routedTools !== payload.tools ? { tools: routedTools } : {}),
       };
       // Native OpenAI traffic keeps client_metadata; routed providers do not
       // consume it and the strict ones reject the unknown field.

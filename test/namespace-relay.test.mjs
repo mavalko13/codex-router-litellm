@@ -7,6 +7,7 @@ import {
   buildNamespaceLookups,
   flattenNamespacedHistory,
   flattenNamespaceTools,
+  normalizeToolSchemasForOpenAI,
   rewriteNamespaceFunctionCall,
   rewriteNamespaceResponsePayload,
 } from "../src/namespace-relay.mjs";
@@ -113,6 +114,39 @@ test("flattenNamespaceTools keeps the full tool schema on flattened entries", ()
   assert.equal(flat.description, "Create a thread");
   assert.deepEqual(flat.inputSchema, schema);
   assert.equal(flat.strict, true);
+});
+
+test("normalizeToolSchemasForOpenAI converts nested and flattened Codex schemas", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      threadId: { type: "string" },
+      prompt: { type: "string" },
+    },
+    required: ["threadId", "prompt"],
+  };
+  const tools = [
+    {
+      type: "namespace",
+      name: "codex_app",
+      tools: [{ type: "function", name: "send_message_to_thread", inputSchema: schema }],
+    },
+    {
+      type: "function",
+      name: "codex_app__send_message_to_thread",
+      inputSchema: schema,
+    },
+  ];
+
+  const normalized = normalizeToolSchemasForOpenAI(tools);
+  const nested = normalized[0].tools[0];
+  const flattened = normalized[1];
+  for (const tool of [nested, flattened]) {
+    assert.deepEqual(tool.parameters, schema);
+    assert.equal(tool.inputSchema, undefined);
+    assert.deepEqual(tool.parameters.required, ["threadId", "prompt"]);
+  }
+  assert.deepEqual(tools[0].tools[0].inputSchema, schema, "the input remains immutable");
 });
 
 test("flattenNamespaceTools handles non-array and empty input", () => {

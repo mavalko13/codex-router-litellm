@@ -28,6 +28,59 @@ import { StringDecoder } from "node:string_decoder";
 
 export const NAMESPACE_DELIMITER = "__";
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+// Codex uses `inputSchema` for native function definitions, including the
+// functions nested under its namespace entries. OpenAI-compatible Responses
+// endpoints use `parameters` instead. Keep this as a pure transform because
+// the definitions supplied by the desktop are also retained locally for
+// native dispatch; rewriting them in place would make a routed turn alter
+// later native turns.
+//
+// The explicit `function` branch covers the Chat Completions wrapper as well
+// as direct Responses functions. The `tools` branch permits nested namespaces
+// without walking arbitrary schema objects, where an `inputSchema` field would
+// be data rather than a tool-definition property.
+export function normalizeToolSchemasForOpenAI(tools) {
+  if (!Array.isArray(tools)) return tools;
+  let changed = false;
+  const normalized = tools.map((tool) => {
+    const next = normalizeToolSchemaForOpenAI(tool);
+    if (next !== tool) changed = true;
+    return next;
+  });
+  return changed ? normalized : tools;
+}
+
+function normalizeToolSchemaForOpenAI(tool) {
+  if (!isRecord(tool)) return tool;
+  let normalized = tool;
+
+  const replace = (field, value) => {
+    if (normalized === tool) normalized = { ...tool };
+    normalized[field] = value;
+  };
+
+  if (Array.isArray(tool.tools)) {
+    const nested = normalizeToolSchemasForOpenAI(tool.tools);
+    if (nested !== tool.tools) replace("tools", nested);
+  }
+  if (isRecord(tool.function)) {
+    const nested = normalizeToolSchemaForOpenAI(tool.function);
+    if (nested !== tool.function) replace("function", nested);
+  }
+  if (Object.hasOwn(tool, "inputSchema")) {
+    if (normalized === tool) normalized = { ...tool };
+    // A provider-specific `parameters` value is authoritative, including an
+    // intentionally empty schema. Only supply the Codex schema when absent.
+    if (!Object.hasOwn(tool, "parameters")) normalized.parameters = tool.inputSchema;
+    delete normalized.inputSchema;
+  }
+  return normalized;
+}
+
 // A fresh local thread inherits the routed session model when the caller did
 // not choose one. Follow-up messages intentionally keep the target thread's
 // settings, and cloud tasks require model omission, so neither is rewritten.

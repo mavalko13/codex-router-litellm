@@ -31,6 +31,7 @@ import {
   credentialStatus,
   resolveProviderCredential,
 } from "./provider-credentials.mjs";
+import { normalizeToolSchemasForOpenAI } from "./namespace-relay.mjs";
 import {
   ensureFreshGitHubCopilotSession,
   githubCopilotRequestHeaders,
@@ -405,6 +406,14 @@ function normalizeBody(buffer, contentType, route) {
     payload.messages = sanitizeChatToolHistory(payload.messages, provider);
   }
   if (apiSurface !== API_SURFACE_RESPONSES) sanitizeChatToolDefinitions(payload);
+  // This is the final process boundary before an OpenAI-compatible Responses
+  // provider. Convert Codex-native schemas on this outbound copy only: the
+  // desktop keeps `inputSchema` in its own in-memory definitions for native
+  // dispatch. Do not apply this to Chat Completions, whose wrapper/validation
+  // is owned by the existing Responses -> Chat conversion.
+  if (route === "/responses" && Array.isArray(payload.tools)) {
+    payload.tools = normalizeToolSchemasForOpenAI(payload.tools);
+  }
   if (provider.authProfile === "github-copilot") {
     // This is native ChatGPT account metadata, not an upstream scheduling
     // request Copilot accepts.

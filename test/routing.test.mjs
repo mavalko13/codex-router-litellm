@@ -417,6 +417,15 @@ test("router refuses a known model whose provider is hidden", async () => {
 });
 
 test("router direct-forwards Responses-native LiteLLM Gateway models", async () => {
+  const sendMessageSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      threadId: { type: "string", description: "Thread id to continue." },
+      prompt: { type: "string", description: "Follow-up prompt to send." },
+    },
+    required: ["threadId", "prompt"],
+  };
   const upstreamRequests = [];
   let failure;
   const upstream = await mockServer(async (request, response) => {
@@ -539,13 +548,50 @@ test("router direct-forwards Responses-native LiteLLM Gateway models", async () 
     const response = await fetch(`${routerBase(routerPort)}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "litellm-gateway/codex-gpt-5.5", input: "test" }),
+      body: JSON.stringify({
+        model: "litellm-gateway/codex-gpt-5.5",
+        input: "test",
+        tools: [
+          {
+            type: "namespace",
+            name: "codex_app",
+            tools: [{
+              type: "function",
+              name: "send_message_to_thread",
+              inputSchema: sendMessageSchema,
+            }],
+          },
+          {
+            type: "function",
+            name: "codex_app__send_message_to_thread",
+            inputSchema: sendMessageSchema,
+          },
+          {
+            type: "function",
+            name: "already_openai",
+            parameters: { type: "object", properties: { path: { type: "string" } } },
+          },
+        ],
+      }),
     });
     assert.equal(response.status, 200, await response.text());
     assert.equal(upstreamRequests.length, 1);
     assert.equal(upstreamRequests[0].url, "/v1/responses");
     assert.equal(upstreamRequests[0].headers.authorization, "Bearer test-virtual-key");
     assert.equal(upstreamRequests[0].body.model, "codex-gpt-5.5");
+    const directTools = upstreamRequests[0].body.tools;
+    const flattenedThreadTool = directTools.find(
+      (tool) => tool.name === "codex_app__send_message_to_thread",
+    );
+    assert.ok(flattenedThreadTool, "the flattened Codex thread tool reaches external Responses");
+    assert.deepEqual(flattenedThreadTool.parameters, sendMessageSchema);
+    assert.equal(flattenedThreadTool.inputSchema, undefined);
+    assert.deepEqual(flattenedThreadTool.parameters.required, ["threadId", "prompt"]);
+    assert.deepEqual(
+      directTools.find((tool) => tool.name === "already_openai")?.parameters,
+      { type: "object", properties: { path: { type: "string" } } },
+      "an existing OpenAI parameters schema remains unchanged",
+    );
     assert.equal(localGatewayRequests.length, 0);
 
     failure = "response";
@@ -585,6 +631,15 @@ test("router direct-forwards Responses-native LiteLLM Gateway models", async () 
 });
 
 test("router sends LiteLLM Gateway chat-completions models through the local bridge", async () => {
+  const sendMessageSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      threadId: { type: "string" },
+      prompt: { type: "string" },
+    },
+    required: ["threadId", "prompt"],
+  };
   const localGatewayRequests = [];
   const localGateway = await mockServer(async (request, response) => {
     localGatewayRequests.push({ url: request.url, body: await bodyJson(request) });
@@ -647,7 +702,14 @@ test("router sends LiteLLM Gateway chat-completions models through the local bri
       body: JSON.stringify({
         model: "litellm-gateway/ollama-cloud-minimax-m3",
         input: "как дела?",
-        tools: [{ type: "function", name: "exec_command", parameters: { type: "object" } }],
+        tools: [
+          { type: "function", name: "exec_command", parameters: { type: "object" } },
+          {
+            type: "function",
+            name: "codex_app__send_message_to_thread",
+            inputSchema: sendMessageSchema,
+          },
+        ],
       }),
     });
     assert.equal(response.status, 200, await response.text());
@@ -665,6 +727,12 @@ test("router sends LiteLLM Gateway chat-completions models through the local bri
       localGatewayRequests[0].body.tools.some((tool) => tool?.name === "codex_app__automation_update"),
       "the deferred Codex app toolset is relayed to the local translator",
     );
+    const bridgedThreadTool = localGatewayRequests[0].body.tools.find(
+      (tool) => tool?.name === "codex_app__send_message_to_thread",
+    );
+    assert.ok(bridgedThreadTool, "the flattened thread tool reaches the Responses-to-Chat bridge");
+    assert.deepEqual(bridgedThreadTool.parameters, sendMessageSchema);
+    assert.equal(bridgedThreadTool.inputSchema, undefined);
   } finally {
     await stopChild(router);
     await closeServer(localGateway.server);
