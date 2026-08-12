@@ -72,7 +72,7 @@ jobs:
   analyze-swift:
     name: Analyze (Swift)
     needs: changes
-    if: needs.changes.outputs.swift_changed == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.swift_changed == 'true') }}
     runs-on: macos-latest
     timeout-minutes: 30
 

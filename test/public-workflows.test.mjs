@@ -65,7 +65,6 @@ test("CodeQL PR gates Swift with first-party Swift-relevant path detection", () 
   assert.match(source, /\.codeql\//);
   assert.match(source, /codeql-config\\\.ya\?ml/);
   assert.match(source, /scripts\/build-macos-tray-app\\\.sh/);
-  assert.match(source, /if: needs\.changes\.outputs\.swift_changed == 'true'/);
   assert.match(source, /languages: swift/);
   assert.match(source, /security-extended/);
   assert.match(source, /codeql\/swift-queries:AlertSuppression\.ql/);
@@ -108,6 +107,15 @@ test("CodeQL PR gates Swift with first-party Swift-relevant path detection", () 
     true,
     "renaming Package.swift must retain the old path through --no-renames",
   );
+});
+
+test("CodeQL PR runs Swift fail-closed when change detection fails", () => {
+  const source = workflow("codeql.yml");
+  assert.match(
+    source,
+    /if: \$\{\{ !cancelled\(\) && \(needs\.changes\.result != 'success' \|\| needs\.changes\.outputs\.swift_changed == 'true'\) \}\}/,
+  );
+  assert.doesNotMatch(source, /always\(\)/);
 });
 
 test("CodeQL Full always scans both languages and suppresses only main pushes", () => {
