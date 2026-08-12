@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.3 - 2026-08-12
+
+- **Release verification is portable again.** `doctor --json` no longer
+  references the removed Desktop/tray lifecycle state when Router is not
+  serving, so an unhealthy Router is reported as a real failed check instead
+  of crashing before the JSON report is written. The retired macOS companion
+  cleanup entrypoint is also exercised explicitly on non-macOS CI hosts.
+
 ## 0.4.2 - 2026-08-12
 
 - **Stale routed models now fail closed and recover only for compaction.** An

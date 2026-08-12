@@ -639,13 +639,11 @@ try {
 
 const health = await waitForRouterHealth({ timeoutMs: serviceLoaded ? 30_000 : 2_000 });
 add(
-  health.ok ? "ok" : serviceStoppedByDesign ? "warn" : "fail",
+  health.ok ? "ok" : "fail",
   "Router health",
   health.ok
     ? `version ${health.payload.version}`
-    : serviceStoppedByDesign
-      ? "not serving; the background service is following Codex"
-      : `not ready on 127.0.0.1:${PORTS.router} after ${serviceLoaded ? 30 : 2} seconds; ${health.error}`,
+    : `not ready on 127.0.0.1:${PORTS.router} after ${serviceLoaded ? 30 : 2} seconds; ${health.error}`,
   "Run ./bin/doctor --fix. If it still fails, create a support bundle.",
 );
 
