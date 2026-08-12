@@ -61,23 +61,32 @@ test("macOS cleanup retains an unrelated bundle with the same display name", () 
 test("direct CLI invocation works with a relative module path", () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "legacy-desktop-cleanup-cli-"));
   try {
-    const bin = path.join(root, "bin");
-    mkdirSync(bin, { recursive: true });
-    const launchctl = path.join(bin, "launchctl");
     const home = path.join(root, "home");
     const bundle = path.join(home, "Applications", "Model Router.app", "Contents", "MacOS");
-    writeFileSync(launchctl, "#!/bin/sh\nexit 0\n");
-    chmodSync(launchctl, 0o755);
     mkdirSync(bundle, { recursive: true });
     writeFileSync(path.join(bundle, "ModelRouterTray"), "binary\n");
+    const env = { ...process.env, HOME: home };
+    if (process.platform === "darwin") {
+      const bin = path.join(root, "bin");
+      mkdirSync(bin, { recursive: true });
+      const launchctl = path.join(bin, "launchctl");
+      writeFileSync(launchctl, "#!/bin/sh\nexit 0\n");
+      chmodSync(launchctl, 0o755);
+      env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
+    }
     const result = spawnSync(process.execPath, ["src/legacy-desktop-cleanup.mjs"], {
       cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
       encoding: "utf8",
-      env: { ...process.env, HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+      env,
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Removed retired desktop companion files/);
-    assert.equal(existsSync(path.join(home, "Applications", "Model Router.app")), false);
+    if (process.platform === "darwin") {
+      assert.match(result.stdout, /Removed retired desktop companion files/);
+      assert.equal(existsSync(path.join(home, "Applications", "Model Router.app")), false);
+    } else {
+      assert.equal(result.stdout, "");
+      assert.equal(existsSync(path.join(home, "Applications", "Model Router.app")), true);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

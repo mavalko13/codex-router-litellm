@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { freePort } from "./port-pool.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SESSION_KEY = "TEST_COMMANDCODE_SESSION_KEY";
 
@@ -319,9 +321,12 @@ test("a CLI session descriptor may not escape its own home directory", () => {
 // Connecting succeeds and then every request 403s unless the account holds the
 // Provider plan. That gap is invisible at connect time, so the note has to
 // reach the surfaces where someone decides to connect.
-test("the Provider plan requirement is stated wherever Command Code is connected", () => {
+test("the Provider plan requirement is stated wherever Command Code is connected", async () => {
   const { testRoot, sessionDirectory } = sessionRoot(SESSION_KEY);
-  const environmentValues = environment(testRoot, sessionDirectory);
+  const routerPort = await freePort();
+  const environmentValues = environment(testRoot, sessionDirectory, {
+    MODEL_ROUTER_PORT: String(routerPort),
+  });
   try {
     const enabled = spawnSync(
       process.execPath,
@@ -337,7 +342,11 @@ test("the Provider plan requirement is stated wherever Command Code is connected
       env: environmentValues,
       timeout: 120_000,
     });
-    const planCheck = JSON.parse(doctor.stdout).checks.find((c) => c.name === "Command Code plan");
+    assert.equal(doctor.status, 1, doctor.stderr);
+    const doctorReport = JSON.parse(doctor.stdout);
+    const routerHealth = doctorReport.checks.find((c) => c.name === "Router health");
+    assert.equal(routerHealth?.status, "fail");
+    const planCheck = doctorReport.checks.find((c) => c.name === "Command Code plan");
     assert.ok(planCheck, "doctor must raise the plan requirement for a selected provider");
     assert.equal(planCheck.status, "warn");
 
