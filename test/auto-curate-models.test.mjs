@@ -45,6 +45,7 @@ function dependencies(overrides = {}) {
     read: () => ({ exists: true, valid: true, models: [manual] }),
     log: (message) => logs.push(message),
     markPending: () => {},
+    recordRetired: () => ({ written: true }),
     assertOwner: () => {},
     discover: async () => ({
       discovered: ["registered-model", "manual-model", "new-model"],

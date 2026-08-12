@@ -1507,6 +1507,411 @@ test("router synthesizes routed compaction and safely replays it to native model
   }
 });
 
+test("stale routed slugs recover only for compaction through one exact durable successor", async () => {
+  const stateDir = mkdtempSync(path.join(os.tmpdir(), "routing-retired-model-"));
+  writeFileSync(
+    path.join(stateDir, "retired-routed-models.json"),
+    `${JSON.stringify({
+      version: 1,
+      models: {
+        "deepseek/deepseek-v4-preview": {
+          provider: "deepseek",
+          successors: ["deepseek/deepseek-v4-pro"],
+          retiredAt: "2026-08-12T00:00:00.000Z",
+        },
+      },
+      active: {},
+    })}\n`,
+    { mode: 0o600 },
+  );
+  const gatewayRequests = [];
+  const gateway = await mockServer(async (request, response) => {
+    gatewayRequests.push(await bodyJson(request));
+    json(response, 200, {
+      id: "resp-summary",
+      object: "response",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "compact summary" }] },
+      ],
+    });
+  });
+  const nativeRequests = [];
+  const native = await mockServer(async (request, response) => {
+    nativeRequests.push(await bodyJson(request));
+    json(response, 200, { route: "native" });
+  });
+  const routerPort = await openPort();
+  const router = run("router.mjs", {
+    CODEX_ROUTER_PORT: String(routerPort),
+    MODEL_ROUTER_STATE_DIR: stateDir,
+    CODEX_ROUTER_GATEWAY_BASE_URL: `http://127.0.0.1:${gateway.port}/v1`,
+    CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+    CODEX_ROUTER_QUIET: "1",
+  });
+  const headers = { "Content-Type": "application/json" };
+  const input = [
+    { type: "message", role: "user", content: [{ type: "input_text", text: "keep me" }] },
+  ];
+
+  try {
+    await waitFor(`${routerBase(routerPort)}/models`, router);
+
+    const ordinary = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: "deepseek/deepseek-v4-preview", input }),
+    });
+    assert.equal(ordinary.status, 409);
+    assert.equal((await ordinary.json()).error.type, "retired_routed_model");
+    assert.equal(gatewayRequests.length, 0);
+    assert.equal(nativeRequests.length, 0);
+
+    const compact = await fetch(`${routerBase(routerPort)}/responses/compact`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: "deepseek/deepseek-v4-preview", input }),
+    });
+    assert.equal(compact.status, 200, await compact.text());
+    assert.equal(gatewayRequests[0].model, "deepseek-v4-pro");
+    assert.equal(nativeRequests.length, 0);
+
+    const v2 = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "deepseek/deepseek-v4-preview",
+        stream: false,
+        input: [...input, { type: "compaction_trigger" }],
+      }),
+    });
+    const v2Body = await v2.json();
+    assert.equal(v2.status, 200, JSON.stringify(v2Body));
+    assert.equal(v2Body.model, "deepseek/deepseek-v4-preview");
+    assert.equal(gatewayRequests[1].model, "deepseek-v4-pro");
+    assert.equal(nativeRequests.length, 0);
+  } finally {
+    await stopChild(router);
+    await Promise.all([closeServer(native.server), closeServer(gateway.server)]);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("slash-bearing unknown models never fall through to native routing", async () => {
+  const nativeRequests = [];
+  const native = await mockServer(async (request, response) => {
+    nativeRequests.push(await bodyJson(request));
+    json(response, 200, { route: "native" });
+  });
+  const routerPort = await openPort();
+  const router = run("router.mjs", {
+    CODEX_ROUTER_PORT: String(routerPort),
+    CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+    CODEX_ROUTER_QUIET: "1",
+  });
+
+  try {
+    await waitFor(`${routerBase(routerPort)}/models`, router);
+    for (const model of ["unknown/provider ", "unknown//provider"]) {
+      const response = await fetch(`${routerBase(routerPort)}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, input: [] }),
+      });
+      assert.equal(response.status, 400, model);
+      assert.equal((await response.json()).error.type, "invalid_routed_model", model);
+    }
+
+    const nativeResponse = await fetch(`${routerBase(routerPort)}/responses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-native-unknown", input: [] }),
+    });
+    assert.equal(nativeResponse.status, 200);
+    assert.equal(nativeRequests.length, 1);
+    assert.equal(nativeRequests[0].model, "gpt-native-unknown");
+  } finally {
+    await stopChild(router);
+    await closeServer(native.server);
+  }
+});
+
+test("stale native aliases recover compact requests only through their exact routed target", async () => {
+  for (const fixture of [
+    { label: "exact successor", successors: ["deepseek/deepseek-v4-pro"], compactStatus: 200 },
+    { label: "missing mapping", successors: undefined, compactStatus: 409 },
+  ]) {
+    const stateDir = mkdtempSync(path.join(os.tmpdir(), "routing-retired-alias-"));
+    writeFileSync(
+      path.join(stateDir, "native-aliases.json"),
+      `${JSON.stringify({
+        version: 1,
+        aliases: { "gpt-5.6-sol": "deepseek/deepseek-v4-preview" },
+      })}\n`,
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      path.join(stateDir, "retired-routed-models.json"),
+      `${JSON.stringify({
+        version: 1,
+        models: fixture.successors
+          ? {
+              "deepseek/deepseek-v4-preview": {
+                provider: "deepseek",
+                successors: fixture.successors,
+              },
+            }
+          : {},
+        active: {},
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const gatewayRequests = [];
+    const gateway = await mockServer(async (request, response) => {
+      gatewayRequests.push(await bodyJson(request));
+      json(response, 200, {
+        output: [
+          { type: "message", content: [{ type: "output_text", text: "compact summary" }] },
+        ],
+      });
+    });
+    const nativeRequests = [];
+    const native = await mockServer(async (request, response) => {
+      nativeRequests.push(await bodyJson(request));
+      json(response, 200, { route: "native" });
+    });
+    const routerPort = await openPort();
+    const router = run("router.mjs", {
+      CODEX_ROUTER_PORT: String(routerPort),
+      MODEL_ROUTER_STATE_DIR: stateDir,
+      CODEX_ROUTER_GATEWAY_BASE_URL: `http://127.0.0.1:${gateway.port}/v1`,
+      CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+      CODEX_ROUTER_QUIET: "1",
+    });
+    const input = [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "keep me" }] },
+    ];
+
+    try {
+      await waitFor(`${routerBase(routerPort)}/models`, router);
+      const ordinary = await fetch(`${routerBase(routerPort)}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-5.6-sol", input }),
+      });
+      assert.equal(ordinary.status, 409, fixture.label);
+      assert.equal(nativeRequests.length, 0, fixture.label);
+
+      const compact = await fetch(`${routerBase(routerPort)}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-sol",
+          stream: false,
+          input: [...input, { type: "compaction_trigger" }],
+        }),
+      });
+      assert.equal(compact.status, fixture.compactStatus, fixture.label);
+      const compactBody = await compact.json();
+      if (fixture.compactStatus === 200) {
+        assert.equal(compactBody.model, "gpt-5.6-sol");
+        assert.equal(gatewayRequests[0].model, "deepseek-v4-pro");
+      } else {
+        assert.equal(compactBody.error.type, "retired_routed_model_target_missing");
+        assert.equal(gatewayRequests.length, 0);
+      }
+      assert.equal(nativeRequests.length, 0, fixture.label);
+    } finally {
+      await stopChild(router);
+      await Promise.all([closeServer(native.server), closeServer(gateway.server)]);
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("malformed native alias targets fail closed before native redirect", async () => {
+  const stateDir = mkdtempSync(path.join(os.tmpdir(), "routing-malformed-alias-"));
+  writeFileSync(
+    path.join(stateDir, "native-aliases.json"),
+    `${JSON.stringify({ version: 1, aliases: { "gpt-5.6-sol": "broken" } })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    path.join(stateDir, "native-redirect.json"),
+    `${JSON.stringify({ version: 1, model: "kimi-oauth/k3" })}\n`,
+    { mode: 0o600 },
+  );
+  const gatewayRequests = [];
+  const gateway = await mockServer(async (request, response) => {
+    gatewayRequests.push(await bodyJson(request));
+    json(response, 200, { route: "external" });
+  });
+  const nativeRequests = [];
+  const native = await mockServer(async (request, response) => {
+    nativeRequests.push(await bodyJson(request));
+    json(response, 200, { route: "native" });
+  });
+  const routerPort = await openPort();
+  const router = run("router.mjs", {
+    CODEX_ROUTER_PORT: String(routerPort),
+    MODEL_ROUTER_STATE_DIR: stateDir,
+    CODEX_ROUTER_GATEWAY_BASE_URL: `http://127.0.0.1:${gateway.port}/v1`,
+    CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+    CODEX_ROUTER_QUIET: "1",
+  });
+
+  try {
+    await waitFor(`${routerBase(routerPort)}/models`, router);
+    for (const input of [[], [{ type: "compaction_trigger" }]]) {
+      const response = await fetch(`${routerBase(routerPort)}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-5.6-sol", input }),
+      });
+      assert.equal(response.status, 400);
+      const body = await response.json();
+      assert.equal(body.error.type, "invalid_routed_model");
+      assert.equal(body.error.target, "broken");
+    }
+    assert.equal(gatewayRequests.length, 0);
+    assert.equal(nativeRequests.length, 0);
+  } finally {
+    await stopChild(router);
+    await Promise.all([closeServer(native.server), closeServer(gateway.server)]);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("unknown and unprovable stale routed compaction fails closed before native forwarding", async () => {
+  const cases = [
+    {
+      label: "missing retirement",
+      state: { version: 1, models: {}, active: {} },
+      expected: "retired_routed_model_target_missing",
+    },
+    {
+      label: "missing successor",
+      state: {
+        version: 1,
+        models: { "retired/model": { provider: "retired", successors: [] } },
+        active: {},
+      },
+      expected: "retired_routed_model_target_missing",
+    },
+    {
+      label: "ambiguous successor",
+      state: {
+        version: 1,
+        models: {
+          "retired/model": {
+            provider: "retired",
+            successors: ["deepseek/deepseek-v4-pro", "kimi-oauth/k3"],
+          },
+        },
+        active: {},
+      },
+      expected: "retired_routed_model_target_ambiguous",
+    },
+  ];
+
+  for (const fixture of cases) {
+    const stateDir = mkdtempSync(path.join(os.tmpdir(), "routing-retired-fail-"));
+    writeFileSync(
+      path.join(stateDir, "retired-routed-models.json"),
+      `${JSON.stringify(fixture.state)}\n`,
+      { mode: 0o600 },
+    );
+    const nativeRequests = [];
+    const native = await mockServer(async (request, response) => {
+      nativeRequests.push(await bodyJson(request));
+      json(response, 200, { route: "native" });
+    });
+    const routerPort = await openPort();
+    const router = run("router.mjs", {
+      CODEX_ROUTER_PORT: String(routerPort),
+      MODEL_ROUTER_STATE_DIR: stateDir,
+      CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+      CODEX_ROUTER_QUIET: "1",
+    });
+    try {
+      await waitFor(`${routerBase(routerPort)}/models`, router);
+      const response = await fetch(`${routerBase(routerPort)}/responses/compact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "retired/model", input: [] }),
+      });
+      assert.equal(response.status, 409, fixture.label);
+      assert.equal((await response.json()).error.type, fixture.expected, fixture.label);
+      assert.equal(nativeRequests.length, 0, fixture.label);
+    } finally {
+      await stopChild(router);
+      await closeServer(native.server);
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("malformed retired mapping and disabled exact successor both fail closed", async () => {
+  for (const fixture of [
+    { label: "malformed", raw: "{broken", expected: "retired_routed_model_state_invalid" },
+    {
+      label: "disabled",
+      raw: JSON.stringify({
+        version: 1,
+        models: {
+          "retired/model": {
+            provider: "retired",
+            successors: ["deepseek/deepseek-v4-pro"],
+          },
+        },
+        active: {},
+      }),
+      expected: "provider_not_enabled",
+      selection: [],
+    },
+  ]) {
+    const stateDir = mkdtempSync(path.join(os.tmpdir(), "routing-retired-invalid-"));
+    writeFileSync(path.join(stateDir, "retired-routed-models.json"), `${fixture.raw}\n`, {
+      mode: 0o600,
+    });
+    if (fixture.selection) {
+      writeFileSync(
+        path.join(stateDir, "enabled-providers.json"),
+        `${JSON.stringify({ version: 1, providers: fixture.selection })}\n`,
+        { mode: 0o600 },
+      );
+    }
+    const nativeRequests = [];
+    const native = await mockServer(async (request, response) => {
+      nativeRequests.push(await bodyJson(request));
+      json(response, 200, { route: "native" });
+    });
+    const routerPort = await openPort();
+    const router = run("router.mjs", {
+      CODEX_ROUTER_PORT: String(routerPort),
+      MODEL_ROUTER_STATE_DIR: stateDir,
+      CODEX_NATIVE_BASE_URL: `http://127.0.0.1:${native.port}/backend-api/codex`,
+      CODEX_ROUTER_SHOW_ALL_MODELS: fixture.selection ? "0" : "1",
+      MODEL_ROUTER_SHOW_ALL_MODELS: fixture.selection ? "0" : "1",
+      CODEX_ROUTER_QUIET: "1",
+    });
+    try {
+      await waitFor(`${routerBase(routerPort)}/models`, router);
+      const response = await fetch(`${routerBase(routerPort)}/responses/compact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "retired/model", input: [] }),
+      });
+      assert.equal(response.status, 409, fixture.label);
+      assert.equal((await response.json()).error.type, fixture.expected, fixture.label);
+      assert.equal(nativeRequests.length, 0, fixture.label);
+    } finally {
+      await stopChild(router);
+      await closeServer(native.server);
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("router strips non-OpenAI reasoning encrypted_content before replaying to native", async () => {
   const nativeRequests = [];
   const native = await mockServer(async (request, response) => {

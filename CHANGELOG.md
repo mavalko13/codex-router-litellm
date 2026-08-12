@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.4.2 - 2026-08-12
+
+- **Stale routed models now fail closed and recover only for compaction.** An
+  unknown namespaced `provider/model` is never treated as native OpenAI
+  traffic. Router keeps a private, atomic retirement ledger and may use its
+  single explicit `upgradeTo` successor internally for `/responses/compact`
+  or a v2 `compaction_trigger`; ordinary turns and missing, ambiguous,
+  malformed, unavailable, or disabled mappings return a clear local error.
+  Compaction responses retain the model slug the client requested. Routed
+  picker entries also stop inheriting the native-only `truncation_policy`.
+  Recovery is forward-only: models retired before the ledger existed have no
+  automatic mapping and fail closed unless an exact durable mapping is present;
+  Router never bootstraps retirement history through fuzzy or provider-based
+  guesses.
+
 - **Removed the unused Desktop/tray applications.** The Tauri Windows/Linux
   companion and the unused native macOS tray are no longer built, installed, or
   documented. Router, CLI, Node, LiteLLM, macOS, Linux, and Windows support

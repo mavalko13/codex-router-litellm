@@ -48,6 +48,10 @@ export const NATIVE_CATALOG_SOURCE_PATH = path.join(
 export const MERGED_CATALOG_PATH = path.join(STATE_DIR, "merged-models.json");
 export const NATIVE_ALIAS_PATH = path.join(STATE_DIR, "native-aliases.json");
 export const ANNOUNCED_MODELS_PATH = path.join(STATE_DIR, "announced-models.json");
+export const RETIRED_ROUTED_MODELS_PATH = path.join(
+  STATE_DIR,
+  "retired-routed-models.json",
+);
 export const LIVE_MODEL_METADATA_PATH =
   process.env.MODEL_ROUTER_LIVE_MODEL_METADATA ||
   path.join(STATE_DIR, "live-model-metadata.json");

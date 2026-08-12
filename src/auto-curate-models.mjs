@@ -24,6 +24,7 @@ import {
   writeLiveModelMetadata,
 } from "./live-model-metadata.mjs";
 import { resolveProviderBaseUrl } from "./provider-endpoints.mjs";
+import { recordRetiredRoutedModels } from "./retired-routed-models.mjs";
 
 const AUTO_DISCOVERY_TIMEOUT_MS = 10_000;
 
@@ -162,6 +163,7 @@ export async function autoCurateDiscoveredModels({
   writeLiveMetadata = writeLiveModelMetadata,
   providerBaseUrl = (provider) => resolveProviderBaseUrl(provider, { persistent: true }),
   markPending = markAutoCurateRefreshPending,
+  recordRetired = recordRetiredRoutedModels,
   assertOwner = assertStateOwnership,
   log = (message) => console.error(`[codex-router] ${message}`),
 } = {}) {
@@ -320,6 +322,12 @@ export async function autoCurateDiscoveredModels({
     // The durable marker is committed before the overlay while both are under
     // the shared user-model transaction. A crash can therefore cause a
     // harmless extra rebuild, never a permanently unpublished model.
+    if (removed.length > 0) {
+      const retirement = recordRetired(removed);
+      if (!retirement?.written) {
+        throw new Error("Could not preserve retired routed model state.");
+      }
+    }
     markPending();
     if (metadataChanged) writeLiveMetadata(livePayload);
     return {

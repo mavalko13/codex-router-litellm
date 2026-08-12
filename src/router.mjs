@@ -68,6 +68,7 @@ import {
 import { readHiddenModels } from "./model-picker-state.mjs";
 import { readVisionBridgeSettings } from "./vision-bridge-state.mjs";
 import { installedNativeVisionEngines } from "./vision-engines.mjs";
+import { readRetiredRoutedModels } from "./retired-routed-models.mjs";
 import { VERSION } from "./version.mjs";
 
 const LISTEN_HOST =
@@ -1395,16 +1396,103 @@ async function handleResponses(request, response, requestUrl) {
     const body = decodeBody(encoded, request.headers["content-encoding"]);
     const payload = parseBody(body);
     requestedModel = typeof payload.model === "string" ? payload.model : "";
-    let registeredRoute =
-      MODEL_BY_SLUG.get(requestedModel) ??
-      MODEL_BY_SLUG.get(readNativeAliases()[requestedModel]);
+    const compactV1 = /\/responses\/compact$/.test(requestUrl.pathname);
+    const compactV2 =
+      Array.isArray(payload.input) &&
+      payload.input.at(-1)?.type === "compaction_trigger";
+    const compactRequest = compactV1 || compactV2;
+    const nativeAliases = readNativeAliases();
+    const aliasTarget = nativeAliases[requestedModel] || "";
+    const directRoute = MODEL_BY_SLUG.get(requestedModel);
+    let registeredRoute = directRoute ?? MODEL_BY_SLUG.get(aliasTarget);
+    const routedModelCandidate = requestedModel.includes("/")
+      ? requestedModel
+      : !directRoute && aliasTarget
+        ? aliasTarget
+        : "";
+    const validNamespacedModel = /^[^/\s]+\/[^/\s]+(?:\/[^/\s]+)*$/.test(
+      routedModelCandidate,
+    );
+    const staleAliasTarget = routedModelCandidate === aliasTarget && aliasTarget !== requestedModel;
+    if (!registeredRoute && routedModelCandidate) {
+      if (!validNamespacedModel) {
+        writeJson(response, 400, {
+          error: {
+            type: "invalid_routed_model",
+            model: requestedModel,
+            ...(staleAliasTarget ? { target: routedModelCandidate } : {}),
+            message: `Invalid routed model ${routedModelCandidate}. Routed model names must use non-empty, whitespace-free provider/model segments.`,
+          },
+        });
+        return;
+      }
+      const retired = readRetiredRoutedModels();
+      const retirement = retired.valid ? retired.models[routedModelCandidate] : undefined;
+      if (!compactRequest) {
+        writeJson(response, retirement || staleAliasTarget ? 409 : 404, {
+          error: {
+            type: retirement
+              ? "retired_routed_model"
+              : staleAliasTarget
+                ? "retired_routed_model_target_missing"
+                : "unknown_routed_model",
+            model: requestedModel,
+            ...(staleAliasTarget ? { target: routedModelCandidate } : {}),
+            message: retirement
+              ? `Routed model ${routedModelCandidate} has been retired. Select a current model before continuing.`
+              : staleAliasTarget
+                ? `Native alias ${requestedModel} points to unavailable routed model ${routedModelCandidate}. No exact durable replacement mapping is available.`
+                : `Unknown routed model ${requestedModel}. Namespaced models are never forwarded to the native OpenAI backend.`,
+          },
+        });
+        return;
+      }
+      if (!retired.valid) {
+        writeJson(response, 409, {
+          error: {
+            type: "retired_routed_model_state_invalid",
+            model: requestedModel,
+            message: `Cannot compact ${routedModelCandidate}: retired routed model state is unreadable or malformed.`,
+          },
+        });
+        return;
+      }
+      const successors = retirement?.successors;
+      if (!retirement || !Array.isArray(successors) || successors.length !== 1) {
+        writeJson(response, 409, {
+          error: {
+            type: successors?.length > 1
+              ? "retired_routed_model_target_ambiguous"
+              : "retired_routed_model_target_missing",
+            model: requestedModel,
+            ...(staleAliasTarget ? { target: routedModelCandidate } : {}),
+            message: successors?.length > 1
+              ? `Cannot compact ${routedModelCandidate}: its durable replacement mapping is ambiguous.`
+              : `Cannot compact ${routedModelCandidate}: no exact durable replacement mapping is available.`,
+          },
+        });
+        return;
+      }
+      registeredRoute = MODEL_BY_SLUG.get(successors[0]);
+      if (!registeredRoute) {
+        writeJson(response, 409, {
+          error: {
+            type: "retired_routed_model_target_missing",
+            model: requestedModel,
+            target: successors[0],
+            message: `Cannot compact ${routedModelCandidate}: mapped replacement ${successors[0]} is unavailable.`,
+          },
+        });
+        return;
+      }
+    }
     // An unregistered model on this endpoint is native GPT traffic -- Codex's
     // background agent sessions arrive here hardwired to a native slug no
     // matter which model the user picked. With the redirect opted in, send
     // them to the configured routed model; a target that is unknown or whose
     // provider is hidden leaves the turn native rather than trading a quota
     // failure for a routing error.
-    if (!registeredRoute && requestedModel) {
+    if (!registeredRoute && requestedModel && !routedModelCandidate) {
       const redirect = MODEL_BY_SLUG.get(readNativeRedirect());
       if (redirect && readProviderSelection().includes(redirect.provider)) {
         registeredRoute = redirect;
@@ -1430,12 +1518,6 @@ async function handleResponses(request, response, requestUrl) {
       model: route?.slug || requestedModel || undefined,
       ...activityMetadataFromHeaders(request.headers),
     });
-    const compactV1 = /\/responses\/compact$/.test(requestUrl.pathname);
-    const compactV2 =
-      route &&
-      Array.isArray(payload.input) &&
-      payload.input.at(-1)?.type === "compaction_trigger";
-
     const controller = new AbortController();
     request.once("aborted", () => {
       clientGone = true;
@@ -1448,7 +1530,7 @@ async function handleResponses(request, response, requestUrl) {
       }
     });
 
-    if (route && (compactV1 || compactV2)) {
+    if (route && compactRequest) {
       const compaction = await handleRoutedCompaction(
         request,
         response,

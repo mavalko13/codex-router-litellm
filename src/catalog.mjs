@@ -33,6 +33,7 @@ import { assertStateOwnership } from "./state-owner.mjs";
 import { applyVisionBridge, resolveVisionEngine } from "./vision-bridge.mjs";
 import { readVisionBridgeSettings } from "./vision-bridge-state.mjs";
 import { nativeVisionEngines } from "./vision-engines.mjs";
+import { reconcileRetiredRoutedModels } from "./retired-routed-models.mjs";
 import {
   readNativeCatalogFile,
   readNativeCatalogSource,
@@ -331,6 +332,8 @@ export function routedModel(template, model) {
     // opt in after their tool and encrypted-payload relay paths are verified.
     multi_agent_version: model.multiAgentVersion || "v1",
   };
+  // This is a native OpenAI request policy, not routed-model metadata.
+  delete next.truncation_policy;
   // ClinePass strips these unsupported request controls, so Codex must not offer them.
   if (model.requestProfile === "clinepass") {
     delete next.default_reasoning_level;
@@ -593,6 +596,9 @@ function main() {
         ? { ...model, visibility: "hide" }
         : model,
   );
+  // Provider disablement is not retirement, so reconcile the complete routed
+  // registry rather than the enabled picker subset.
+  reconcileRetiredRoutedModels([...MODEL_BY_SLUG.values()]);
   atomicJson(MERGED_CATALOG_PATH, { models: writtenCatalogModels });
   atomicJson(NATIVE_ALIAS_PATH, { version: 1, aliases });
   writeAnnouncedAt(announcedAt);
