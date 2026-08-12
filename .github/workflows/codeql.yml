@@ -1,12 +1,8 @@
-name: CodeQL
+name: CodeQL PR
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    - cron: "17 3 * * 1"
 
 permissions:
   actions: read
@@ -14,7 +10,45 @@ permissions:
   security-events: write
 
 jobs:
-  analyze:
+  changes:
+    name: Detect Swift-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      swift_changed: ${{ steps.filter.outputs.swift_changed }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect Swift-relevant changes
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Keep this list to files that affect Swift extraction or its build input.
+          changed_files="$RUNNER_TEMP/codeql-swift-changed-files"
+          if ! git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" > "$changed_files"; then
+            echo "::warning::Unable to detect Swift-relevant changes; running Swift CodeQL."
+            echo "swift_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if grep -zEq '^(apps/macos/|(.*/)?Package\.(swift|resolved)$|\.github/(workflows/codeql(-[A-Za-z0-9_-]+)?\.ya?ml$|codeql-config\.ya?ml$|codeql/)|\.codeql/|codeql-config\.ya?ml$|(\.swift-version|Makefile|justfile|xcodegen\.ya?ml|project\.ya?ml|scripts/build-macos-tray-app\.sh)$)' "$changed_files"; then
+            echo "swift_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            grep_status=$?
+            if [ "$grep_status" -eq 1 ]; then
+              echo "swift_changed=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Unable to evaluate Swift-relevant changes; running Swift CodeQL."
+              echo "swift_changed=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  analyze-javascript:
     name: Analyze (JavaScript/TypeScript)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -31,22 +65,14 @@ jobs:
           packs: codeql/javascript-queries:AlertSuppression.ql
 
       - name: Analyze
-        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
-          output: sarif-results
-
-      - name: Apply source suppressions
-        if: github.ref == 'refs/heads/main'
-        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
-        env:
-          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_API_URL: ${{ github.api_url }}
+          category: .github/workflows/codeql.yml:analyze
 
   analyze-swift:
     name: Analyze (Swift)
+    needs: changes
+    if: needs.changes.outputs.swift_changed == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
 
@@ -66,17 +92,6 @@ jobs:
         run: swift build --package-path apps/macos/ModelRouterTray
 
       - name: Analyze
-        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:swift
-          output: sarif-results
-
-      - name: Apply source suppressions
-        if: github.ref == 'refs/heads/main'
-        run: node .github/scripts/apply-codeql-suppressions.mjs "${{ steps.analyze.outputs.sarif-output }}"
-        env:
-          SARIF_ID: ${{ steps.analyze.outputs.sarif-id }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_API_URL: ${{ github.api_url }}
