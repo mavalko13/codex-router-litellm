@@ -131,9 +131,9 @@ it at a loopback `openai_base_url`. This makes named models appear in the normal
 picker instead of replacing the provider with a generic `Custom` entry.
 
 The same managed config also defines an inert `codex-router` custom provider.
-The tray's login-free switch selects that provider for new Codex sessions, so
-Codex can send Responses requests to the local router without first acquiring
-OpenAI authentication. Model selection stays in the native Codex picker in
+Login-free mode selects that provider for new Codex sessions, so Codex can send
+Responses requests to the local router without first acquiring OpenAI
+authentication. Model selection stays in the native Codex picker in
 both modes: login-free catalogs alias external models onto native slugs, and
 `control model-set` switches the active model from the command line. The switch snapshots the previous root
 `model_provider` in protected state and restores it when disabled. It never
@@ -225,9 +225,9 @@ backend can open its own opaque payload. In login-free mode the router fails
 closed instead of forwarding unreadable ciphertext to an external provider.
 
 Only registry-proven models are advertised as native v2 spawn-agent overrides
-by default. The Settings tab (desktop panel and macOS tray) exposes two local
-accordions: **Subagent models** controls whether all selected models, or only
-individually chosen models, are promoted to `multi_agent_version: "v2"` in the
+by default. The control commands expose the same model-selection policy:
+**Subagent models** controls whether all selected models, or only individually
+chosen models, are promoted to `multi_agent_version: "v2"` in the
 merged catalog. The all-models mode follows the picker dynamically: a model
 hidden from **Model picker** is not exposed as a subagent. Each accordion also
 has select-all and unselect-all bulk actions. `bin/multi-agent on` still

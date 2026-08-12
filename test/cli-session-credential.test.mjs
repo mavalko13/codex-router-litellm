@@ -180,7 +180,7 @@ test("onboarding offers sign-in beside the key field and reports which one is li
 
 // `command-code login` is an Ink interface that needs stdin in raw mode, so a
 // piped spawn dies on "Raw mode is not supported" before it opens a browser.
-// The tray has to hand it a terminal instead, and that is worth pinning: the
+  // A background invocation has to hand it a terminal instead, and that is worth pinning: the
 // regression is invisible until someone clicks Sign In.
 //
 // POSIX only: both stand-ins below are `#!/bin/sh` scripts on a hand-built

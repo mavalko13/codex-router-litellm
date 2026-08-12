@@ -12,7 +12,6 @@ export function verificationPlan({
 } = {}) {
   const npm = platform === "win32" ? "npm.cmd" : "npm";
   const plan = [];
-  if (full) plan.push({ label: "Check desktop prerequisites", kind: "desktop-prerequisites" });
   if (!reuseDependencies) plan.push({ label: "Install root dependencies", command: npm, args: ["ci"] });
   plan.push(
     { label: "Check JavaScript syntax", command: npm, args: ["run", "check"] },
@@ -29,27 +28,6 @@ export function verificationPlan({
     plan.push(
       { label: "Check POSIX entrypoints", kind: "posix" },
       { label: "Parse PowerShell entrypoints when pwsh is available", kind: "powershell", optional: true },
-    );
-  }
-  if (full) {
-    if (!reuseDependencies) {
-      plan.push({
-        label: "Install desktop dependencies",
-        command: npm,
-        args: ["ci", "--prefix", "apps/desktop"],
-      });
-    }
-    plan.push(
-      {
-        label: "Check desktop JavaScript and Rust",
-        command: npm,
-        args: ["run", "check", "--prefix", "apps/desktop"],
-      },
-      {
-        label: "Build the desktop binary",
-        command: npm,
-        args: ["run", "build:binary", "--prefix", "apps/desktop"],
-      },
     );
   }
   return plan;
@@ -84,16 +62,6 @@ function commandAvailable(command) {
   }
 }
 
-function checkDesktopPrerequisites() {
-  const missing = ["cargo", "rustc"].filter((command) => !commandAvailable(command));
-  if (missing.length) {
-    throw new Error(
-      `Desktop verification requires the Rust toolchain (${missing.join(", ")} not found). ` +
-        "Install Rust from https://rustup.rs/ and run this command again.",
-    );
-  }
-}
-
 function parsePowerShellEntrypoints({ optional }) {
   const executable = process.env.PWSH_BIN || (process.platform === "win32" ? "powershell.exe" : "pwsh");
   if (optional && !commandAvailable(executable)) {
@@ -104,7 +72,6 @@ function parsePowerShellEntrypoints({ optional }) {
     "install.ps1",
     "codex-router.ps1",
     "model-router.ps1",
-    "scripts/build-desktop-tray.ps1",
   ];
   const script = [
     `$files = @(${files.map((file) => `'${file.replaceAll("'", "''")}'`).join(",")})`,
@@ -135,8 +102,8 @@ function usage() {
   process.stdout.write(
     "Usage: node scripts/verify-local.mjs [--full] [--reuse-deps] [--dry-run]\n\n" +
       "Default: clean root install, syntax, full Node suite, audit, and platform entrypoint checks.\n" +
-      "--full: also install, check, test, and build the Tauri desktop application.\n" +
-      "--reuse-deps: keep existing root/desktop dependencies for a faster repeat run.\n" +
+      "--full: reserved for the complete router verification contract.\n" +
+      "--reuse-deps: keep existing root dependencies for a faster repeat run.\n" +
       "--dry-run: print the exact local plan without executing it.\n",
   );
 }
@@ -159,7 +126,6 @@ async function main() {
     process.stdout.write(`\n[${index + 1}/${plan.length}] ${step.label}\n`);
     if (step.kind === "posix") checkPosixEntrypoints();
     else if (step.kind === "powershell") parsePowerShellEntrypoints(step);
-    else if (step.kind === "desktop-prerequisites") checkDesktopPrerequisites();
     else run(step.command, step.args);
   }
   process.stdout.write(`\nLocal verification passed in ${Math.ceil((Date.now() - started) / 1000)}s.\n`);

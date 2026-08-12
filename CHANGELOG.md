@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Removed the unused Desktop/tray applications.** The Tauri Windows/Linux
+  companion and the unused native macOS tray are no longer built, installed, or
+  documented. Router, CLI, Node, LiteLLM, macOS, Linux, and Windows support
+  remain unchanged. CodeQL now scans the maintained JavaScript/TypeScript
+  surface only.
+
 - **Update instructions now cover every supported desktop platform in English
   and Russian.** The public README, LiteLLM guides, and installation guide show
   the managed-checkout path and policy-safe commands for macOS, Linux, and

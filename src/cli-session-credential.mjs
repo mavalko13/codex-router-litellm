@@ -35,7 +35,7 @@ export function cliSessionPath(provider) {
 
 // Returns the key and the file it came from, and nothing else. The session
 // file also carries the signed-in account name and id; those stay inside this
-// function so status output, the tray, and support bundles cannot echo them.
+// function so status output and support bundles cannot echo them.
 export function readCliSessionCredential(provider) {
   const descriptor = cliSessionDescriptor(provider);
   if (!descriptor) return undefined;

@@ -212,7 +212,7 @@ test("the picker ranks proven readers above caption-only models", () => {
     models.findIndex((m) => m.tag === "moondream") >
       models.findIndex((m) => m.tag === "qwen2.5vl:3b"),
   );
-  // Every entry carries a tier, so the tray always has a badge to show.
+  // Every entry carries a tier, so clients always have a badge to show.
   assert.ok(models.every((m) => typeof m.accuracy === "string" && m.accuracy));
 });
 

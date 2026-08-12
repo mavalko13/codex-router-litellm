@@ -46,7 +46,7 @@ test("the answer is refreshed once the window lapses", async () => {
   clock.t = 2_999;
   assert.deepEqual(await cached("gateway", probe), { reachable: true });
   // A service that goes down must not stay "reachable" indefinitely; the TTL
-  // is the entire bound on how stale the tray's status can be.
+  // is the entire bound on how stale a client status can be.
   clock.t = 3_000;
   assert.deepEqual(await cached("gateway", probe), { reachable: false });
   assert.equal(probes, 2);
@@ -89,7 +89,7 @@ test("a thrown probe is not cached as an answer", async () => {
 });
 
 test("the default window is short enough for a live status display", () => {
-  // The tray presents this as current service state. A long TTL turns it into
+  // Clients present this as current service state. A long TTL turns it into
   // a stale claim, so the default is capped at a few seconds by intent.
   assert.ok(DEFAULT_HEALTH_TTL_MS > 0);
   assert.ok(DEFAULT_HEALTH_TTL_MS <= 5_000);

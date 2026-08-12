@@ -23,7 +23,7 @@ test("maintenance targets the checkout that owns the installed router", () => {
   }
 });
 
-test("maintenance falls back to the tray checkout when no owner exists", () => {
+test("maintenance falls back to its checkout when no owner exists", () => {
   assert.equal(
     maintenanceSourceRoot("/Users/example/Code/codex-router", {
       version: 1,
@@ -33,7 +33,7 @@ test("maintenance falls back to the tray checkout when no owner exists", () => {
   );
 });
 
-test("tray maintenance runs update before doctor", () => {
+test("maintenance runs update before doctor", () => {
   const calls = [];
   const sourceRoot = path.resolve("router");
   const runner = (command, args, options) => {
@@ -70,7 +70,7 @@ test("tray maintenance runs update before doctor", () => {
   assert.deepEqual(result, { updated: true, verified: true, checks: 1 });
 });
 
-test("tray maintenance summarizes failed doctor checks", () => {
+test("maintenance summarizes failed doctor checks", () => {
   let call = 0;
   const runner = () => {
     call += 1;

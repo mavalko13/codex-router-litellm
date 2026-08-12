@@ -65,8 +65,8 @@ Then fully quit Codex, reopen it, and create a new task. Closing only a window
 does not reload `model_catalog_json`.
 
 Current Windows releases run the unified desktop app as `ChatGPT`, not
-`Codex`. If closing the window leaves it resident, quit it from the tray or,
-after saving any active work, stop only that app process:
+`Codex`. If closing the window leaves it resident, after saving any active
+work, stop only that app process:
 
 ```powershell
 Get-Process ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force

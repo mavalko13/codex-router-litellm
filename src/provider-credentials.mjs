@@ -88,7 +88,7 @@ export function keychainProbeCount() {
 // served a stale answer. In practice credentials are written by short-lived CLI
 // processes (`provider-key set`, `bin/control credential`) rather than by the
 // long-running router, so this is a correctness backstop for same-process
-// sequences -- installer and tray flows that store a key and then immediately
+// sequences -- installer and interactive flows that store a key and then immediately
 // rebuild the catalog -- and the TTL is what governs the router itself.
 export function resetKeychainCache() {
   keychainCache.clear();

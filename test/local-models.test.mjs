@@ -287,7 +287,7 @@ test("a machine too small for everything still gets an honest empty list", () =>
   assert.ok(suggestedLocalModels({ capacity: tiny, includeUnusable: true }).length > 0);
 });
 
-test("the listing renders for a person, not only for the tray", () => {
+test("the listing renders for a person, not only for clients", () => {
   const snapshot = localModelsSnapshot({
     inventory: parseOllamaList(
       "NAME  ID  SIZE  MODIFIED\nllama3.2:3b  aaa  2.0 GB  1 hour ago\ngemma3:4b  bbb  3.3 GB  1 hour ago\n",

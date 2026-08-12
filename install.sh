@@ -10,8 +10,6 @@ guided=auto
 providers=
 migrate_known=false
 smoke_test=false
-with_tray=false
-no_tray=false
 previous_revision=
 force=false
 target=codex
@@ -38,8 +36,6 @@ Options:
   --providers LIST   Enable comma-separated provider ids (or "configured")
   --migrate-known    Snapshot and replace recognized earlier router installs
   --smoke-test       Make one small billed request per enabled provider
-  --with-tray        Also build and launch the desktop companion app
-  --no-tray          Never offer the desktop companion app
   --force            Discard edits to tracked files in the managed checkout
                      before updating it. Untracked files are never touched.
   -h, --help          Show this help
@@ -147,14 +143,6 @@ while [ "$#" -gt 0 ]; do
       providers=$2
       guided=false
       shift 2
-      ;;
-    --with-tray)
-      with_tray=true
-      shift
-      ;;
-    --no-tray)
-      no_tray=true
-      shift
       ;;
     --migrate-known)
       migrate_known=true
@@ -283,8 +271,6 @@ if [ "$guided" = true ]; then set -- "$@" --guided; fi
 if [ -n "$providers" ]; then set -- "$@" --providers "$providers"; fi
 if [ "$migrate_known" = true ]; then set -- "$@" --migrate-known; fi
 if [ "$smoke_test" = true ]; then set -- "$@" --smoke-test; fi
-if [ "$with_tray" = true ]; then set -- "$@" --with-tray; fi
-if [ "$no_tray" = true ]; then set -- "$@" --no-tray; fi
 setup_status=0
 "$repo_dir/bin/setup" "$@" || setup_status=$?
 # Exit 2 means setup left configuration unfinished (a declined prompt, a

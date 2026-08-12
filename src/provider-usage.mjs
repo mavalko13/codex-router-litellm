@@ -17,7 +17,7 @@ function nonnegative(value) {
 }
 
 // Routed slugs are provider-qualified (`kimi-oauth/k3`); native ones are bare
-// (`gpt-5.6-sol`). The tray groups under a provider already, so drop the prefix.
+// (`gpt-5.6-sol`). Provider grouping already exists, so drop the prefix.
 function modelDisplayName(slug) {
   const slash = slug.lastIndexOf("/");
   return slash === -1 ? slug : slug.slice(slash + 1) || slug;

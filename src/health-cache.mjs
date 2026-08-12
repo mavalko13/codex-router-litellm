@@ -6,7 +6,7 @@
 // between two probes a fraction of a second apart.
 //
 // A short TTL collapses a burst of polls into one probe. It is deliberately
-// short: the tray shows live service status, so a stale "reachable" is a lie
+// short: clients show live service status, so a stale "reachable" is a lie
 // with a shelf life, and a few seconds is the most that is honest.
 export const DEFAULT_HEALTH_TTL_MS = 3_000;
 

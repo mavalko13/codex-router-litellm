@@ -140,8 +140,8 @@ Qwen is key-only. Alibaba discontinued the Qwen Code OAuth free tier on
 points at the token-plan endpoint. Set `QWEN_PLAN_BASE_URL` to
 `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` to bill a
 pay-as-you-go DashScope key through the same provider. Alibaba publishes no
-quota or balance API on either endpoint, so the tray shows router-observed
-traffic and links to the console for actual spend.
+quota or balance API on either endpoint, so use the provider console for actual
+spend.
 
 ClinePass uses Cline's OpenAI-compatible API at
 `https://api.cline.bot/api/v1`. An API key alone does not grant access to the
@@ -214,9 +214,8 @@ credential store.
 
 At request time the GitHub credential is validated through the Copilot account
 endpoint, which also selects the account's inference host. That host is accepted
-only when it is GitHub-owned. The tray reads the account's AI-credit or legacy
-request quota when GitHub exposes a per-user meter; organization-managed plans
-that expose no per-seat quota fall back to router-observed traffic.
+only when it is GitHub-owned. Organization-managed plans that expose no
+per-seat quota must use GitHub's own billing information.
 
 GitHub documents the PAT permission and Copilot clients, while the inference
 interface may continue to evolve. Requests consume the user's Copilot
@@ -338,9 +337,8 @@ enable the family:
 ./bin/model-router codex multi-agent on
 ```
 
-The desktop panel and macOS tray Settings tab also provide per-model controls:
-which enabled models can run as subagents, and which models appear in the
-Codex picker.
+Use the control commands to choose which enabled models can run as subagents
+and which models appear in the Codex picker.
 
 Catalog refreshes also validate Codex's default subagent model and explicit
 models in role files. An obsolete routed slug is updated only when the same
@@ -416,12 +414,10 @@ command-code login
 ./bin/model-router codex multi-agent on
 ```
 
-The macOS tray offers the same flow: the Command Code row has an
-**Install & Sign In** button (**Sign In** once the CLI is present) next to
-**Add Key**. `command-code login` draws a full-screen terminal interface, so
-the tray opens a Terminal window to run it and waits for the credential rather
-than piping it. The router only reads that file — it never rewrites, copies,
-or deletes it — so `command-code logout` also revokes the router's access.
+`command-code login` draws a full-screen terminal interface. Run it directly
+in a terminal; the router only reads the resulting credential file and never
+rewrites, copies, or deletes it, so `command-code logout` also revokes the
+router's access.
 
 **Store a key instead.** Create one in Command Code Studio and save it here:
 
@@ -466,8 +462,8 @@ catalog is available without authentication from
 `https://api.commandcode.ai/provider/v1/models`, and additional models can be
 added per machine with `./bin/curate-models commandcode`. Point
 `COMMANDCODE_BASE_URL` elsewhere to override the endpoint. Command Code does
-not document an account-balance API, so the tray links to Command Code Studio
-for credits and usage.
+not document an account-balance API; use Command Code Studio for credits and
+usage.
 
 ### Meta Model API
 
@@ -641,19 +637,17 @@ which Codex home was modified before rerunning setup.
 
 ### Use Codex without an OpenAI login
 
-The tray's **Use without OpenAI login** switch selects the managed custom
-provider for new Codex sessions. In that mode, enabled external models use the
-OAuth session or API key configured for their provider and do not require a
-ChatGPT or OpenAI API login. Connect and enable at least one external provider
-before turning it on. On macOS, the tray gracefully quits and reopens the
-registered Codex desktop app after the mode changes; if that restart fails, the
-tray reports that Codex must be restarted manually. The switch keeps the current
-model when it already belongs to a connected external provider; otherwise it
-selects the first enabled model from one of those providers.
+The `./bin/control auth-mode on` command selects the managed custom provider
+for new Codex sessions. In that mode, enabled external models use the OAuth
+session or API key configured for their provider and do not require a ChatGPT
+or OpenAI API login. Connect and enable at least one external provider before
+turning it on. It keeps the current model when it already belongs to a connected
+external provider; otherwise it selects the first enabled model from one of
+those providers. Restart Codex after changing the mode.
 
 While the switch is on, model selection happens in Codex's own picker: the
 catalog republishes external models with their real names, so switching models
-needs no extra tray UI. `./bin/control model-set <model-slug>` switches the
+needs no extra user interface. `./bin/control model-set <model-slug>` switches the
 active model from the command line; it accepts canonical external slugs and
 writes the aliased native slug so pickers highlight the selection.
 
@@ -681,8 +675,8 @@ provider. They are labelled **experimental** there, and the label is earned:
 using a local model as the *vision reader* is reliable, but using one as a
 *chat model* is not. A borderline model was seen passing the capability check
 and failing the identical check minutes later, so treat local chat as something
-to try rather than something to depend on. Open the tray's **Model Settings → Local LLMs**, check the ones you
-want, then fully quit and reopen Codex.
+to try rather than something to depend on. Use the controls below to select
+models, then fully quit and reopen Codex.
 
 ```sh
 ./bin/control local-models list                  # installed, plus what to download
@@ -692,8 +686,7 @@ want, then fully quit and reopen Codex.
 ```
 
 `list` also answers "which model should I get?", because knowing a tag by
-heart is not a reasonable prerequisite. The tray shows the same two groups
-under **Local LLMs**, one button per model:
+heart is not a reasonable prerequisite. It reports two groups:
 
 ```text
 For coding — experimental. Codex's prompt uses about 20K of the 32K window:
@@ -850,7 +843,7 @@ Notes worth knowing:
 - **You can see what it spent.** Every read that is not served from the cache
   is written to `usage-events.jsonl` with the engine it was billed to, and the
   router logs one line per bridged turn. Plan quota for a ChatGPT-plan engine
-  is still not reflected in the tray's limits — see `AGENTS.md`.
+  is not available from a provider quota endpoint — see `AGENTS.md`.
 
 The evidence contract is modelled on
 [ModLens](https://github.com/liustack/modlens), which solves the same problem
@@ -864,17 +857,8 @@ vision model running on your own machine. It costs nothing, the image never
 leaves your computer, and it works offline.
 
 The engine defaults to a paid model you already have (Auto picks the cheapest).
-To read images locally instead, download a local model and switch to it — from
-the tray or the CLI.
-
-**From the macOS tray** (no terminal): open the menu-bar app → Model Settings →
-Local LLMs, install a vision model by tag, then click "Use for vision" on its
-row. Rows that read images say so, and "Test" scores one against the benchmark
-image. Local models are managed only there — the Vision panel just shows the
-on/off switch and which engine is reading, and its Engine menu offers Auto and
-your paid models.
-
-**From the CLI**, list the same picker — size, fit, and what's already pulled:
+To read images locally instead, download a local model and select it from the
+command line:
 
 ```sh
 ./bin/control vision-bridge models
@@ -883,8 +867,8 @@ your paid models.
 ```
 
 The download runs detached: `pull` returns immediately and the model is pinned
-as the reader only once it is actually on disk, so quitting the tray — or a
-failed download — never leaves the bridge pointing at a model that isn't there.
+as the reader only once it is actually on disk, so an interrupted process or
+failed download never leaves the bridge pointing at a model that isn't there.
 
 Not sure what your machine can run? This reads your RAM and pings your local
 server, without downloading or changing anything:
@@ -965,8 +949,7 @@ weekly, cached, falling back to the checked-in figures offline), so they match
 what `ollama list` will show you.
 
 **Any other model.** The curated list is short on purpose, but it is not a
-cage: the tray's Local LLMs section has a field that accepts any Ollama tag —
-including `hf.co/user/repo:Q4_K_M` — and the CLI takes one too.
+cage: the CLI accepts any Ollama tag, including `hf.co/user/repo:Q4_K_M`.
 
 ```sh
 ./bin/control vision-bridge pull minicpm-v
@@ -997,54 +980,6 @@ How the local path differs from a paid engine:
   slower than a hosted Flash tier and less precise on tiny text. For heavy use,
   a paid vision engine still reads better; the local option is about cost and
   privacy, not peak quality.
-
-## macOS tray control panel
-
-On macOS, build and open the native menu-bar control panel with:
-
-```sh
-./bin/model-router-tray
-```
-
-It shows Codex health, detailed usage for the active provider, a seven-day
-overview of every configured or previously used provider, and auto-applied
-provider controls in a native glass macOS interface. On first launch the app
-registers itself as a login item, so it reopens automatically after a reboot;
-the Settings tab's **Start at login** toggle or System Settings › Login Items
-turns that off, and the choice is never re-applied behind your back. A
-**Show tray** setting can additionally tie every tray surface to the Codex
-and ChatGPT desktop apps, appearing when they launch and hiding when they
-quit. See the [macOS tray guide](docs/MACOS-TRAY.md) for behavior and
-rebuild notes.
-
-The app also places a Dynamic-Island-style overlay at the top center of the
-active display. It follows the provider handling the latest request, reveals
-usage on hover, and expands on click. The menu-bar panel remains available for
-the all-provider overview and configuration.
-
-## Windows and Linux tray control panel
-
-Windows and Linux use the shared Tauri tray companion in `apps/desktop`. It
-provides the same connected-provider filtering, normalized quota cards, daily
-token graph, secure provider setup, and animated activity status as the macOS
-surface.
-
-```sh
-# Linux
-./bin/model-router-tray
-```
-
-```powershell
-# Windows PowerShell
-.\scripts\build-desktop-tray.ps1 -BinaryOnly
-Start-Process .\apps\desktop\src-tauri\target\release\codex-router-desktop.exe
-```
-
-Windows and Linux on X11 receive the floating top-center activity pill. Linux
-on Wayland uses the tray panel without the pill because the compositor owns
-absolute window placement. See the
-[Windows and Linux tray guide](docs/DESKTOP-TRAY.md) for prerequisites,
-packaging, and the platform behavior matrix.
 
 ## Skills for custom models
 
@@ -1176,9 +1111,7 @@ npm run verify:local
 ```
 
 This performs a clean dependency install, syntax checks, the complete Node
-suite, a production dependency audit, and platform entrypoint checks. After a
-Desktop change, run `npm run verify:local:full`; it also checks the Rust/Tauri
-application and builds its native binary, so `cargo` and `rustc` are required.
+suite, a production dependency audit, and platform entrypoint checks.
 `npm run verify:local:fast` is for a repeat run with dependencies already
 current, and `npm run verify:local:plan` prints the full plan without running
 it. These commands do not call provider APIs or paid models.

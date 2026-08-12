@@ -34,7 +34,7 @@ jobs:
       - name: Parse PowerShell entrypoints
         shell: pwsh
         run: |
-          foreach ($file in @("install.ps1", "codex-router.ps1", "model-router.ps1", "scripts/build-desktop-tray.ps1")) {
+          foreach ($file in @("install.ps1", "codex-router.ps1", "model-router.ps1")) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
               (Resolve-Path $file),

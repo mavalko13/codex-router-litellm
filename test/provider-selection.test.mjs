@@ -261,7 +261,7 @@ test("an unreadable or wrong-version selection file degrades instead of throwing
 });
 
 // The read path degrading must not soften the write path: a person naming a
-// provider on the CLI, in `install --providers`, or through the tray still gets
+// provider on the CLI or in `install --providers` still gets
 // a hard error for a typo rather than a silently narrower selection.
 test("the write path still rejects an unknown provider id", () => {
   try {

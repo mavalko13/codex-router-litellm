@@ -91,13 +91,6 @@ Set-Location codex-router
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Guided
 ```
 
-On macOS and Linux, guided setup also offers to build and launch the desktop
-companion (the macOS menu bar app or the Windows/Linux tray). `--with-tray`
-installs it without asking, `--no-tray` never offers it, and automatic mode
-skips it. On macOS the app bundle is placed in `~/Applications` and needs the
-Swift toolchain; a missing toolchain skips the step with guidance instead of
-failing setup. Windows still builds the tray manually with
-`scripts/build-desktop-tray.ps1`.
 In advanced mode, guided setup walks through numbered steps: a provider list
 you toggle by number (`a` selects all, `n` clears, Enter continues) with a live
 ready/needs-key/needs-sign-in status per provider, credential onboarding for
@@ -134,10 +127,9 @@ also hides the provider from the model picker:
 ./bin/provider-key deepseek remove
 ```
 
-The desktop app and macOS tray expose the same two actions per API provider:
-**Replace key** and **Remove**. Removal only deletes the key files the router
-manages — a key that also lives in the macOS Keychain or in an environment
-variable is reported as still active so you can clear it at the source.
+Removal only deletes the key files the router manages — a key that also lives
+in the macOS Keychain or in an environment variable is reported as still active
+so you can clear it at the source.
 
 Grok OAuth uses the official Grok CLI session:
 
@@ -305,7 +297,7 @@ and leaves the original Codex config intact.
 
 `model_catalog_json` is loaded at Codex startup. Fully quit the app, reopen it,
 and create a new task. On macOS use Command-Q; on Windows use the app's Quit
-command or end it from the tray if present.
+command if it remains running after closing the window.
 
 ```sh
 ./bin/doctor

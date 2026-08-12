@@ -136,11 +136,8 @@ This is the local core gate: clean root dependency installation, JavaScript
 syntax, the full Node suite, production dependency audit, and entrypoint checks
 for the current platform. It does not call provider APIs or paid models.
 
-After changing `apps/desktop`, run `npm run verify:local:full`. It also installs
-the desktop lock, runs the Rust/Tauri checks, and builds the native binary;
-`cargo` and `rustc` are required. `npm run verify:local:fast` skips only
-dependency installation on a repeat run, while `npm run verify:local:plan`
-prints the full plan without executing it.
+`npm run verify:local:fast` skips only dependency installation on a repeat run,
+while `npm run verify:local:plan` prints the full plan without executing it.
 
 The test suite verifies native header forwarding, external credential
 isolation, Kimi and DeepSeek rewriting, registry-generated gateway routes,

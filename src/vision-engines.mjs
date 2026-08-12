@@ -8,7 +8,7 @@ import { nativeVisionCandidates } from "./vision-bridge.mjs";
 // image for a text-only model.
 //
 // Three surfaces used to answer that separately and disagreed. `catalog.mjs`
-// gated on the Codex auth probe, the tray gated on merged-catalog membership,
+// gated on the Codex auth probe, while interactive clients use merged-catalog membership,
 // and the request path did not gate at all -- it read `native-models.json`
 // straight off disk. Both captures are reused deliberately when a fresh probe
 // fails, so after a sign-out the catalog correctly stopped advertising the

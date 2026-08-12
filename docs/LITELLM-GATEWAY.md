@@ -243,8 +243,8 @@ the bundle is never uploaded automatically. Inspect it before sharing.
 
 ## Platform support boundary
 
-The Node test suite and installer syntax run in CI on macOS, Ubuntu, and
-Windows. Windows CI also parses the real PowerShell installer and wrapper and
-builds the desktop tray binary. A real colleague install remains the release
-acceptance test for Windows-specific Codex Desktop behavior, firewall policy,
-and access to the operator's actual LiteLLM gateway.
+The Node test suite and installer syntax run through the local verification
+gate. Windows CI parses the real PowerShell installer and wrapper. A real
+colleague install remains the release acceptance test for Windows-specific
+Codex Desktop behavior, firewall policy, and access to the operator's actual
+LiteLLM gateway.

@@ -52,7 +52,7 @@ function resolveProviderIds(values) {
 }
 
 // Write path: strict. Someone naming a provider -- on the CLI, in
-// `install --providers`, in the guided picker, or through the tray -- gets a
+// `install --providers` or in the guided picker -- gets a
 // hard error for a typo instead of a silently narrower selection.
 export function validateProviderIds(values) {
   const named = resolveProviderIds(values);
