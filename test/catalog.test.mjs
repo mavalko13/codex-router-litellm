@@ -39,6 +39,7 @@ const template = {
   },
   apply_patch_tool_type: "freeform",
   default_service_tier: "priority",
+  truncation_policy: { type: "auto" },
 };
 
 const grok = {
@@ -72,6 +73,12 @@ test("routed models are native v2 spawn-agent model overrides", () => {
   assert.equal(model.visibility, "list");
   assert.equal(model.supported_in_api, true);
   assert.equal(model.multi_agent_version, "v2");
+});
+
+test("routed models do not inherit the native truncation policy", () => {
+  const model = routedModel(template, grok);
+  assert.equal("truncation_policy" in model, false);
+  assert.deepEqual(template.truncation_policy, { type: "auto" });
 });
 
 test("routed models advertise reasoning summaries only when the registry opts in", () => {

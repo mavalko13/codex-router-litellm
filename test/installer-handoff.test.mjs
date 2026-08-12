@@ -7,6 +7,8 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -26,6 +28,7 @@ const initial = {
   nativeCatalog: "old native catalog\n",
   mergedCatalog: "old merged catalog\n",
   aliases: "old aliases\n",
+  retiredLedger: "old retired ledger bytes\n",
   announced: "old announcements\n",
   litellm: "old LiteLLM config\n",
   userModels: "old user models\n",
@@ -70,6 +73,7 @@ function writeFixture(base, owner) {
     nativeCatalog: path.join(stateDir, "native-models.json"),
     mergedCatalog: path.join(stateDir, "merged-models.json"),
     aliases: path.join(stateDir, "native-aliases.json"),
+    retiredLedger: path.join(stateDir, "retired-routed-models.json"),
     announced: path.join(stateDir, "announced-models.json"),
     litellm: path.join(stateDir, "litellm.yaml"),
     userModels: path.join(stateDir, "user-models.json"),
@@ -82,7 +86,7 @@ function writeFixture(base, owner) {
   for (const [name, target] of Object.entries(paths)) {
     if (name === "log") continue;
     const contents = name === "manifest" ? manifest(owner) : initial[name];
-    writeFileSync(target, contents, { mode: 0o600 });
+    writeFileSync(target, contents, { mode: name === "retiredLedger" ? 0o640 : 0o600 });
   }
   return { codexHome, stateDir, paths };
 }
@@ -116,6 +120,7 @@ if (step === "service-snapshot") {
 } else if (step === "auto-curate") {
   writeFileSync(paths.userModels, "new user models\\n");
   writeFileSync(paths.pending, "new pending marker\\n");
+  writeFileSync(paths.retiredLedger, "new retired ledger\\n", { mode: 0o600 });
 } else if (step === "catalog") {
   writeFileSync(paths.nativeCatalog, "new native catalog\\n");
   writeFileSync(paths.mergedCatalog, "new merged catalog\\n");
@@ -178,6 +183,7 @@ function assertInitialState(fixture, oldOwner) {
     assert.equal(readFileSync(fixture.paths[name], "utf8"), contents, name);
   }
   assert.equal(readFileSync(fixture.paths.manifest, "utf8"), manifest(oldOwner));
+  assert.equal(statSync(fixture.paths.retiredLedger).mode & 0o777, 0o640);
   assert.equal(
     existsSync(fixture.paths.agent.replace("old-provider-old", "new-provider-new")),
     false,
@@ -249,6 +255,28 @@ test("the successful transaction transfers ownership before the new service star
     assert.deepEqual(steps.slice(-3), ["config", "service", "health"]);
     assert.equal(steps.includes("service-stop"), false);
     assert.equal(steps.includes("service-restore"), false);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a failed transaction removes a retirement ledger that was initially absent", () => {
+  const base = mkdtempSync(path.join(os.tmpdir(), "installer-retired-absent-"));
+  try {
+    const oldOwner = fakeCheckout(base, "old");
+    const fixture = writeFixture(base, oldOwner);
+    unlinkSync(fixture.paths.retiredLedger);
+    const runner = writeRunner(base);
+    const result = runTransaction(
+      fixture,
+      realpathSync(root),
+      runner,
+      ["apply", "--adopt-native-catalog"],
+      { CODEX_ROUTER_INSTALL_FAIL_AFTER: "auto-curate" },
+    );
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Injected failure after auto-curate/);
+    assert.equal(existsSync(fixture.paths.retiredLedger), false);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
