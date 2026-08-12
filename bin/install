@@ -133,36 +133,10 @@ if [ "$adopt_native_catalog" = true ]; then
   set -- "$@" --adopt-native-catalog
 fi
 node src/install-transaction.mjs "$@"
-
-# Adopt an already-built companion into launchd's care. Installs that never
-# added the tray skip this; the point is that anyone who has one ends up
-# supervised without having to know the agent exists.
-node src/tray-service.mjs install >/dev/null 2>&1 || true
-# A companion that is never rebuilt drifts behind the router on every update
-# and keeps running its old binary. Rebuild only when one is already installed
-# -- an update must not add a tray the user never asked for -- and only when
-# the Swift sources actually changed, so a code-only update stays cheap.
-# Best effort throughout: a missing Xcode toolchain must never cost someone
-# their router update, and a non-zero exit here would roll the checkout back.
-tray_plan=$(node src/install-plan.mjs tray-plan 2>/dev/null || echo absent)
-case "$tray_plan" in
-  rebuild)
-    # Keep the build output instead of discarding it: a swallowed failure here
-    # is indistinguishable from success, and the companion would silently stay
-    # on its old binary exactly as it did before this step existed.
-    tray_log=$(mktemp)
-    if "$repo_dir/bin/model-router-tray" >"$tray_log" 2>&1; then
-      echo "Menu-bar companion rebuilt from the updated sources."
-    else
-      echo "Menu-bar companion could not be rebuilt; the router is installed. Retry with ./bin/model-router-tray." >&2
-      sed 's/^/  /' "$tray_log" >&2
-    fi
-    rm -f "$tray_log"
-    ;;
-  skip)
-    echo "Menu-bar companion already matches its sources; skipping the tray build."
-    ;;
-esac
+# Run only after the install transaction has committed. This removes a retired
+# optional companion without making its historical files part of the router's
+# rollback surface or risking the active router service.
+node src/legacy-desktop-cleanup.mjs
 # The skill pack teaches custom routed models how to use the app's native
 # tools. Best effort: a skill install failure must never roll the router back.
 node src/skills-install.mjs install

@@ -37,21 +37,21 @@ const SIGN_IN_CLIS = Object.freeze({
   },
   // Command Code ships `cmd`, `cmdc`, `commandcode`, and `command-code` from
   // one package. Only `command-code` is unambiguous everywhere — `cmd` is the
-  // Windows shell — so the tray always drives that name.
+  // Windows shell — so the router always drives that name.
   commandcode: {
     executable: "command-code",
     npmPackage: "command-code",
     loginArgs: ["login"],
     candidates: [path.join(os.homedir(), ".npm-global", "bin", "command-code")],
     // `command-code login` draws an Ink interface and puts stdin in raw mode,
-    // which a piped stdio pair cannot provide: spawned from the tray it dies
+    // which a piped stdio pair cannot provide: a background invocation dies
     // on "Raw mode is not supported" before it ever opens the browser. It has
     // to be handed a real terminal.
     needsTerminal: true,
   },
 });
 
-// Resolved at most once per process: the tray refreshes its provider snapshot
+// Resolved at most once per process: repeated provider checks
 // on a timer, and an npm spawn per unconfigured provider per refresh would be
 // felt. `undefined` is a real answer here, so the miss is cached too.
 let npmGlobalBinDir;
@@ -114,7 +114,7 @@ export function oauthCliPath(providerId) {
   if (candidate) return candidate;
   // Last resort, because it costs an npm spawn: ask npm where it actually
   // installs global binaries. A custom prefix is invisible to both PATH (the
-  // tray's is the bare system one) and to any list of guessed directories.
+    // a bare system PATH) and to any list of guessed directories.
   return npmGlobalBinary(cli.executable);
 }
 
@@ -133,7 +133,7 @@ function oauthConfigured(providerId) {
 
 export function providerOnboardingSnapshot() {
   // Protocol variants share their parent's key and selection, so onboarding
-  // surfaces (tray, guided setup) offer one entry per family.
+  // surfaces offer one entry per family.
   const selectable = [...PROVIDERS.values()].filter((provider) => !provider.variantOf);
   return {
     providers: selectable.map((provider) => {
@@ -168,14 +168,14 @@ export function providerOnboardingSnapshot() {
         ...(provider.credential?.label ? { credentialLabel: credentialLabel(provider) } : {}),
         configured,
         action: configured ? "ready" : "add-key",
-        // Carried to the tray so the plan requirement is visible at the
-        // moment someone decides to connect, not after Codex 403s.
+        // Kept in the snapshot so the plan requirement is visible before
+        // Codex returns a 403.
         ...(provider.planNote ? { planNote: provider.planNote } : {}),
       };
       // A provider whose CLI mints its key through a browser sign-in keeps the
       // key field (people with a Studio key still paste it) and gains a second
-      // route. The tray needs both states to label the row honestly: whether
-      // the CLI is present, and whether the key in play came from the session.
+      // route. The snapshot retains both states: whether the CLI is present,
+      // and whether the key in play came from the session.
       const session = cliSessionStatus(provider);
       if (!session.supported || !hasSignInCli(provider.id)) return entry;
       const cliInstalled = Boolean(oauthCliPath(provider.id));
@@ -191,8 +191,8 @@ export function providerOnboardingSnapshot() {
 }
 
 // npm and every CLI it installs globally start with `#!/usr/bin/env node`, so
-// they die instantly unless node is on PATH. The tray is launched by launchd
-// with the bare system PATH, which has no node on it — the failure there was
+// they die instantly unless node is on PATH. Background service environments
+// can have a bare system PATH with no node on it — the failure was
 // `env: node: No such file or directory` behind a generic "could not install".
 // Whatever node is running this file is by definition a working one, so put
 // its directory in front for the child.
@@ -216,7 +216,7 @@ function npmPath() {
 }
 
 // npm prints its diagnosis over several lines and ends with log-file paths
-// that mean nothing in a tray dialog; the last real line is the useful one.
+// that mean nothing in a compact error; the last real line is the useful one.
 function installFailureDetail(result) {
   if (result.error) return result.error.message;
   const lines = `${result.stderr || ""}`
@@ -266,7 +266,7 @@ export function installOauthCli(providerId) {
 }
 
 // A browser sign-in is slow by nature — the operator has to switch apps, log
-// in, and authorize — but it must not be able to wedge the tray forever if the
+// in, and authorize — but it must not be able to block the router forever if the
 // CLI waits on a terminal it will never get.
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 const TERMINAL_LOGIN_TIMEOUT_MS = 3 * 60_000;
@@ -274,8 +274,7 @@ const POLL_INTERVAL_MS = 1_500;
 const WAIT_HANDLE = new Int32Array(new SharedArrayBuffer(4));
 
 // Hands the CLI a real terminal window and waits for the credential it writes.
-// The tray has no terminal to lend, and a login this router cannot see the end
-// of is a login the operator would have to come back and repeat.
+// A login without a visible terminal is one the operator would have to repeat.
 // Reconnecting starts from an already-valid session, so "is it configured?"
 // is true before the operator has done anything. Waiting for the CLI to
 // rewrite the file is what actually distinguishes a finished sign-in.
@@ -327,11 +326,11 @@ function signInThroughTerminal(providerId, executable) {
   while (Date.now() < deadline) {
     if (signedInSince(providerId, before)) return;
     // A short blocking sleep: this runs in the one-shot control process the
-    // tray spawned, which has nothing else to do while the operator signs in.
+    // background process has nothing else to do while the operator signs in.
     Atomics.wait(WAIT_HANDLE, 0, 0, POLL_INTERVAL_MS);
   }
   throw new Error(
-    `Still waiting on ${cli.executable} in the Terminal window. Finish signing in there — the tray picks it up on its own.`,
+    `Still waiting on ${cli.executable} in the Terminal window. Finish signing in there, then retry.`,
   );
 }
 

@@ -211,7 +211,7 @@ export async function fetchRegistryCapabilities(tag, { fetchImpl = fetch, timeou
     const bytes = layers.reduce((sum, layer) => sum + (layer?.size || 0), 0);
     // One tenth of a gigabyte on every path: the two early returns used to
     // hand back the raw quotient, so a model whose template could not be read
-    // reported "18.556700222 GB" in the tray while its neighbours read "18.6".
+    // reported "18.556700222 GB" while its neighbours read "18.6".
     const sizeGb = Math.round((bytes / 1e9) * 10) / 10;
     if (!template?.digest) return { tag, tools: false, sizeGb };
     // Blob URLs redirect to a CDN, so the fetch has to follow them.
@@ -301,7 +301,7 @@ function writeCapabilityCache(models) {
 }
 
 // Keyed by the model's content id, so a retagged or rebuilt model is re-read
-// while an unchanged one costs no subprocess at all -- the tray polls this.
+// while an unchanged one costs no subprocess at all -- clients poll this.
 export function localModelCapabilities(tag, id, { spawn = spawnSync, cache } = {}) {
   const store = cache || readCapabilityCache();
   const key = id || tag;
@@ -383,7 +383,7 @@ export function removeLocalModel(tag, { spawn = spawnSync, confirmed = false, ca
   return value;
 }
 
-// One view the tray can render directly: what is installed, what is checked,
+// One view an interactive client can render directly: what is installed, what is checked,
 // what is loaded, and which ones can read images.
 export function localModelsSnapshot({
   inventory = localModelInventory(),
@@ -726,7 +726,7 @@ const VISION_ACCURACY_RANK = {
   "captions-only": 3,
 };
 
-// A snapshot is the tray's data contract, not something a person can read at a
+// A snapshot is an API data contract, not something a person can read at a
 // terminal. This renders the same object for the operator, in the two groups
 // the choice actually splits into.
 function contextLabel(tokens) {

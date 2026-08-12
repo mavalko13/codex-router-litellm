@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { pickerCommandArgs } from "./control-args.mjs";
 
-// Cross-target control plane for a tray/UI (e.g. the planned pane fork). It
+// Cross-target control plane for interactive clients. It
 // reads which registry models are enabled per target and toggles them. Toggling
 // only rewrites each target's provider selection; making it live is a separate
 // explicit `apply`, so a toggle never silently restarts a running target.
@@ -55,7 +55,7 @@ function codexConfigSnapshot() {
   }
 }
 
-// One list, three consumers: the probe the tray renders, the resolve that names
+// One list, three consumers: the probe, the resolve that names
 // the current engine, and the validation that accepts a pin. They disagreed
 // once already -- the picker offered native models the setter then rejected --
 // so the criteria now live in one place for every surface (see
@@ -109,7 +109,7 @@ async function emitProbe() {
   const { readBenchmarkResults } = await import("./vision-benchmark.mjs");
   const { localModelsSnapshot } = await import("./local-models.mjs");
   const { selectedConfiguredListedModels } = await import("./provider-selection.mjs");
-  // Bounded and weekly: the tray reads this snapshot constantly, so a fresh
+  // Bounded and weekly: clients read this snapshot regularly, so a fresh
   // cache costs nothing and a stale one costs one short, failure-tolerant pass.
   if (TARGET === "codex") await refreshVisionModelSizesIfStale();
 
@@ -118,7 +118,7 @@ async function emitProbe() {
   const usageEvents = TARGET === "codex"
     ? (await import("./usage-events.mjs")).recentUsageEvents()
     : [];
-  // The tray groups models by provider to build its rows, so protocol
+  // Group models by provider, so protocol
   // variants report their canonical family id: one opencode Go row, not three.
   const routedModels = LISTED_MODELS.map((model) => ({
     slug: model.slug,
@@ -170,7 +170,7 @@ async function emitProbe() {
                 // A signed-out or login-free install has none, and offering one
                 // there would pin an engine the router cannot reach. Same rule
                 // the catalog build and the request path apply, from the same
-                // helper, so the tray can never advertise an engine the setter
+                // helper, so a client can never advertise an engine the setter
                 // or the router would then refuse.
                 const natives = installedNativeVisionEngines({ hidden: hiddenModels });
                 const resolved = resolveVisionEngine(
@@ -451,7 +451,7 @@ async function setLoginFreeModel(slug) {
   if (!value) throw new Error("Usage: control model-set <model-slug>");
   const config = codexConfigSnapshot();
   if (!config?.login_free) {
-    throw new Error("Switching the tray model requires login-free mode.");
+    throw new Error("Switching the selected model requires login-free mode.");
   }
   const { selectedConfiguredListedModels } = await import("./provider-selection.mjs");
   if (!selectedConfiguredListedModels().some((model) => model.slug === value)) {
@@ -716,7 +716,7 @@ async function handleVisionBridge(action, value, extra) {
   }
   if (action === "pull") {
     // Downloads a local vision model (gigabytes) with Ollama. The caller — a
-    // tray row that shows the size, or a deliberate CLI command — is the
+    // status row that shows the size, or a deliberate CLI command — is the
     // consent. Gigabytes take minutes, so the worker runs detached and this
     // returns at once; progress is polled with `pull-status`. The model is
     // pinned by the worker only after it lands.
@@ -771,7 +771,7 @@ async function handleVisionBridge(action, value, extra) {
     // file with a page of text per model.
     const { transcript, ...stored } = result;
     saveBenchmarkResult(tag, stored);
-    // No catalog rebuild: a score changes a label in this tray, not which
+    // No catalog rebuild: a score changes a label, not which
     // models Codex is offered, so this stays runnable from any checkout.
     process.stdout.write(`${JSON.stringify(stored)}\n`);
     return;
@@ -819,7 +819,7 @@ async function handleVisionBridge(action, value, extra) {
     const slug = String(value || "").trim();
     if (slug && slug !== "auto" && slug !== LOCAL_ENGINE_SLUG) {
       // Must accept everything the picker offers. Validating against the routed
-      // models alone rejected every native slug, so choosing one from the tray
+      // models alone rejected every native slug, so choosing one interactively
       // silently left the previous engine in place.
       const available = rankVisionEngines([
         ...selectedConfiguredListedModels(),
@@ -834,7 +834,7 @@ async function handleVisionBridge(action, value, extra) {
       }
     }
     setVisionBridgeEngine(slug && slug !== "auto" ? slug : null);
-    // The tray picks an engine and a level in one click, so the level rides
+    // An interactive client picks an engine and a level together, so the level rides
     // along here. Left out, whatever was pinned before stays pinned.
     if (extra !== undefined) setVisionBridgeEffort(effortArgument(extra, VISION_EFFORT_LEVELS));
   } else if (action === "effort") {
@@ -863,7 +863,7 @@ async function handleLocalModels(action, value, flag) {
   const snapshot = () => localModelsSnapshot({ benchmarks: readBenchmarkResults() });
   if (action === "list" || action === "status" || !action) {
     const current = snapshot();
-    // The tray and any script read JSON; a person at a terminal was handed a
+    // Scripts read JSON; a person at a terminal is handed a
     // single unbroken line, which only got worse once the snapshot grew a
     // download list. Explicit `--json` keeps the machine contract, and a bare
     // invocation is readable.
@@ -1034,11 +1034,6 @@ async function handlePicker(action, value, flag) {
   process.stdout.write(`${JSON.stringify(modelPickerSnapshot())}\n`);
 }
 
-// The tray drives these two when it follows the Codex/ChatGPT desktop apps:
-// `presence` records the mode so doctor can tell a deliberate shutdown from a
-// crash, and `service` starts or stops the background service. Installing and
-// uninstalling stay out of reach; the tray must not be able to unregister the
-// LaunchAgent that owns the router.
 const SERVICE_COMMANDS = ["status", "start", "stop", "restart"];
 
 function handleService(action) {
@@ -1054,28 +1049,6 @@ function handleService(action) {
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`Background service ${value} failed with exit code ${result.status}.`);
-  }
-}
-
-// Supervision for the tray companion. `disable` boots the agent out, which
-// stops the running tray too -- that is why the Settings toggle does not call
-// it and this stays an explicit command.
-const TRAY_COMMANDS = { enable: "install", disable: "uninstall", status: "status", restart: "restart" };
-
-function handleTray(action) {
-  const value = action || "status";
-  const subcommand = TRAY_COMMANDS[value];
-  if (!subcommand) {
-    throw new Error(`Usage: control tray ${Object.keys(TRAY_COMMANDS).join("|")}`);
-  }
-  const result = spawnSync(
-    process.execPath,
-    [path.join(REPO_ROOT, "src", "tray-service.mjs"), subcommand],
-    { stdio: "inherit", env: process.env },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`Tray ${value} failed with exit code ${result.status}.`);
   }
 }
 
@@ -1102,20 +1075,6 @@ async function handleNativeRedirect(action, value) {
     throw new Error(`Unknown routed model slug: ${value}`);
   }
   process.stdout.write(`${JSON.stringify(setNativeRedirect(value))}\n`);
-}
-
-async function handlePresence(action, value) {
-  const { PRESENCE_MODES, presenceSnapshot, setPresenceMode } = await import(
-    "./presence-state.mjs"
-  );
-  if (!action || action === "status") {
-    process.stdout.write(`${JSON.stringify(presenceSnapshot())}\n`);
-    return;
-  }
-  if (action !== "set") {
-    throw new Error(`Usage: control presence status|set <${PRESENCE_MODES.join("|")}>`);
-  }
-  process.stdout.write(`${JSON.stringify(setPresenceMode(value))}\n`);
 }
 
 // --- dispatch ---------------------------------------------------------------
@@ -1164,10 +1123,6 @@ if (args.includes("--probe")) {
   handleService(args[1]);
 } else if (args[0] === "native-redirect") {
   await handleNativeRedirect(args[1], args[2]);
-} else if (args[0] === "tray") {
-  handleTray(args[1]);
-} else if (args[0] === "presence") {
-  await handlePresence(args[1], args[2]);
 } else if (args[0] === "maintenance") {
   await updateAndVerifyCodex();
 } else if (args[0] === "doctor") {

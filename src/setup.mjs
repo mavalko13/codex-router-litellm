@@ -1,6 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, openSync, readSync, writeSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { cliSessionDescriptor } from "./cli-session-credential.mjs";
@@ -25,7 +24,6 @@ import {
   validateProviderIds,
   writeProviderSelection,
 } from "./provider-selection.mjs";
-import { trayBundleDir, trayDecision } from "./tray-install.mjs";
 import { resolveVisionEngine } from "./vision-bridge.mjs";
 import {
   readVisionBridgeSettings,
@@ -42,8 +40,6 @@ const migrateKnown = args.includes("--migrate-known");
 const adoptNativeCatalog = args.includes("--adopt-native-catalog");
 const runSmoke = args.includes("--smoke-test");
 const selectionOnly = args.includes("--selection-only");
-const withTray = args.includes("--with-tray");
-const noTray = args.includes("--no-tray");
 
 const flagOptions = new Set([
   "--guided",
@@ -52,8 +48,6 @@ const flagOptions = new Set([
   "--adopt-native-catalog",
   "--smoke-test",
   "--selection-only",
-  "--with-tray",
-  "--no-tray",
   "--help",
 ]);
 let setupArgumentError;
@@ -109,8 +103,6 @@ Options:
   --adopt-native-catalog  Use an existing user-owned native Codex catalog as the merge base
   --smoke-test         Make one small live request per enabled provider
   --selection-only     Save provider selection without installing (development)
-  --with-tray          Also build and launch the desktop companion app
-  --no-tray            Never offer the desktop companion app
   --help               Show this help
 
 Providers: ${[...PROVIDERS.values()].filter((provider) => !provider.variantOf).map((provider) => provider.id).join(", ")}
@@ -290,38 +282,6 @@ function signInToProvider(provider) {
   return providerConfigured(provider);
 }
 
-// Best-effort: the router install has already succeeded, so a companion-app
-// build failure warns and continues instead of failing the whole setup.
-function installTray() {
-  try {
-    if (process.platform === "darwin") {
-      try {
-        execFileSync("xcrun", ["--find", "swift"], { stdio: "ignore" });
-      } catch {
-        process.stdout.write(
-          "The Swift toolchain is missing; run `xcode-select --install`, then `./bin/model-router-tray` to add the companion later.\n",
-        );
-        return;
-      }
-      const bundleDir = trayBundleDir("darwin", os.homedir());
-      run(path.join(SOURCE_ROOT, "scripts", "build-macos-tray-app.sh"), [bundleDir]);
-      run("open", [bundleDir]);
-      process.stdout.write(`Menu-bar companion installed at ${bundleDir} and opened.\n`);
-    } else {
-      run(path.join(SOURCE_ROOT, "bin", "model-router-tray"), []);
-      process.stdout.write("Desktop companion built and launched.\n");
-    }
-  } catch (error) {
-    process.stdout.write(
-      `Desktop companion install did not finish: ${error instanceof Error ? error.message : String(error)}\n` +
-        (process.platform === "darwin"
-          ? "Recent macOS SDKs need the full Xcode app (not only the Command Line Tools) to build the menu-bar companion's SwiftUI macros.\n"
-          : "") +
-        "The router itself is installed; retry later with ./bin/model-router-tray.\n",
-    );
-  }
-}
-
 async function main() {
   if (setupArgumentError) throw incomplete(setupArgumentError);
   const legacy = detectLegacyInstallations();
@@ -449,14 +409,6 @@ async function main() {
   } catch (error) {
     if (migration?.migrated) rollbackLatestMigration();
     throw error;
-  }
-
-  const trayStep = trayDecision({ platform: process.platform, withTray, noTray, guided });
-  if (trayStep !== "skip") {
-    const wanted =
-      trayStep === "install" ||
-      confirm("Install the desktop companion app (menu-bar usage meters and provider switcher)?");
-    if (wanted) installTray();
   }
 
   if (runSmoke || (guided && confirm("Run one small live request per enabled provider?", false))) {

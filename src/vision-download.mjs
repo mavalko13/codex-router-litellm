@@ -14,7 +14,7 @@ import { STATE_DIR } from "./paths.mjs";
 import { DEFAULT_LOCAL_VISION_BASE_URL } from "./vision-bridge.mjs";
 
 // A vision model is gigabytes, so the download cannot block whoever asked for
-// it: the tray would sit frozen for minutes and read as crashed. The request
+// it: an interactive client would sit frozen for minutes and read as crashed. The request
 // starts a detached worker that streams Ollama's pull API and records progress
 // here; the caller returns immediately and polls this file.
 export const VISION_DOWNLOAD_STATE_PATH =

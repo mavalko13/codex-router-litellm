@@ -128,7 +128,7 @@ const MAX_DECODED_BODY_BYTES =
     : 256 * 1024 * 1024;
 // No single Codex turn streams for this long. Anything still marked in-flight
 // past this point leaked (crashed client, half-closed socket) and would
-// otherwise inflate the tray activity count until the router restarts.
+// otherwise inflate the activity count until the router restarts.
 const STALE_ACTIVITY_MS = 15 * 60_000;
 const NATIVE_IMAGE_PATHS = new Set([
   "/images/edits",
@@ -795,7 +795,7 @@ async function normalizeRoutedAgentInput(request, input, signal) {
 }
 
 // Which bill a bridged read lands on. A registry engine names its own provider;
-// a native engine spends the signed-in ChatGPT plan, which the tray already
+// a native engine spends the signed-in ChatGPT plan, which the status view already
 // calls `openai`; a local engine spends nothing but electricity.
 function visionEngineProvider(engine) {
   if (engine.native) return "openai";
@@ -984,7 +984,7 @@ async function bridgeVisionInput(input, route, request) {
   // The set itself is unchanged. It is still exactly the selected, credentialed,
   // listed models, plus native candidates that need two things at once, neither
   // sufficient alone. The shared helper (`src/vision-engines.mjs`) applies the
-  // same auth gate the catalog build and the tray apply -- this path used to
+    // same auth gate the catalog build and interactive selection apply -- this path used to
   // read the capture off disk with no gate at all. But every on-disk artifact is
   // reused across a failed probe by design, so a sign-out leaves them naming an
   // engine nothing can call. The caller's live session is the evidence that
@@ -1424,7 +1424,7 @@ async function handleResponses(request, response, requestUrl) {
       return;
     }
     // Activity and usage attribute protocol variants to their canonical
-    // family so the tray Island and graphs show one provider per subscription.
+    // family so usage views show one provider per subscription.
     activity.setRoute({
       provider: route ? canonicalProviderId(route.provider) : "openai",
       model: route?.slug || requestedModel || undefined,

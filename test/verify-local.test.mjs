@@ -15,20 +15,17 @@ test("default local verification mirrors the core CI contract", () => {
   ]);
 });
 
-test("full local verification adds desktop checks and a real binary build", () => {
+test("full local verification retains the core verification contract", () => {
   const plan = verificationPlan({ platform: "win32", full: true });
   assert.ok(plan.some((step) => step.label === "Parse PowerShell entrypoints"));
-  assert.ok(plan.some((step) => step.label === "Check desktop prerequisites"));
-  assert.ok(plan.some((step) => step.label === "Install desktop dependencies"));
-  assert.ok(plan.some((step) => step.label === "Check desktop JavaScript and Rust"));
-  assert.ok(plan.some((step) => step.label === "Build the desktop binary"));
+  assert.ok(plan.some((step) => step.label === "Run the full Node test suite"));
 });
 
 test("fast repeats reuse dependencies without skipping verification", () => {
   const plan = verificationPlan({ reuseDependencies: true, full: true });
   assert.equal(plan.some((step) => step.label.startsWith("Install ")), false);
   assert.ok(plan.some((step) => step.label === "Run the full Node test suite"));
-  assert.ok(plan.some((step) => step.label === "Build the desktop binary"));
+  assert.ok(plan.some((step) => step.label === "Run the full Node test suite"));
 });
 
 test("local verification rejects unknown options", () => {

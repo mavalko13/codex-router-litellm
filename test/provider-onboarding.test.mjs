@@ -10,7 +10,7 @@ import { oauthLoginArgs } from "../src/provider-onboarding.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("Grok tray sign-in explicitly starts the OAuth flow", () => {
+test("Grok sign-in explicitly starts the OAuth flow", () => {
   assert.deepEqual(oauthLoginArgs("grok-oauth"), ["login", "--oauth"]);
   assert.deepEqual(oauthLoginArgs("kimi-oauth"), ["login"]);
 });

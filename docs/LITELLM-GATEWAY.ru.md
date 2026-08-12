@@ -244,8 +244,7 @@ managed files и service definition. После успешного обновл�
 
 ## Граница кроссплатформенной поддержки
 
-Node tests и синтаксис установщиков проверяются CI на macOS, Ubuntu и Windows.
-На Windows CI также разбирает настоящий PowerShell installer и wrapper и
-собирает desktop tray binary. Реальная установка коллегой остаётся release
-acceptance test для поведения Codex Desktop на Windows, локального firewall и
-доступа к настоящему LiteLLM gateway.
+Node tests и синтаксис установщиков проверяются локальной verification-процедурой.
+Windows CI разбирает настоящий PowerShell installer и wrapper. Реальная
+установка коллегой остаётся release acceptance test для поведения Codex Desktop
+на Windows, локального firewall и доступа к настоящему LiteLLM gateway.

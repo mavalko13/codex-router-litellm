@@ -69,7 +69,7 @@ test("the node dependency status CLI works in a clean checkout before npm ci", (
   const root = mkdtempSync(path.join(tmpdir(), "install-plan-clean-cli-"));
   try {
     mkdirSync(path.join(root, "src"));
-    for (const relative of ["package.json", "package-lock.json", "src/install-plan.mjs", "src/tray-install.mjs"]) {
+    for (const relative of ["package.json", "package-lock.json", "src/install-plan.mjs"]) {
       copyFileSync(path.join(projectRoot, relative), path.join(root, relative));
     }
     const result = spawnSync(process.execPath, ["src/install-plan.mjs", "status", "node-deps"], {

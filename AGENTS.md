@@ -261,8 +261,8 @@ installation. It is repository development and requires the process below.
 ### Ship a new provider to every installer
 
 A new provider is only complete when all of the following are true. Do not
-land a provider that satisfies routing but skips the tray, install, or usage
-surfaces.
+land a provider that satisfies routing but skips installation, diagnostics, or
+usage reporting.
 
 1. **One-click install.** The provider ID must work end to end with no manual
    config edits: selectable through `install.sh --providers` /
@@ -271,65 +271,30 @@ surfaces.
    by `bin/model-router codex doctor`. If the provider ships no preselected
    models, document it as catalog-only and make sure `bin/curate-models`
    handles it.
-2. **Tray setup section.** Every provider must appear in the macOS tray with a
-   working setup card driven by `src/provider-onboarding.mjs` and the control
-   commands the tray invokes:
-   - API-key providers get the hidden credential path (tray →
-     `control credential PROVIDER` over stdin → `saveApiCredential`). The key
-     must never transit chat, logs, or command arguments.
-   - OAuth providers additionally get the OAuth section: an `OAUTH_CLIS`
-     entry in `src/provider-onboarding.mjs` (executable, npm package, login
-     arguments) so the tray's `install-cli PROVIDER` and `login PROVIDER`
-     buttons work, plus status,
-     session-refresh, and reconnect-on-expiry wiring in the provider's OAuth
-     status/session modules (follow `kimi-oauth-*` / `grok-oauth-*` as the
-     patterns).
-   - Some official CLIs draw a full-screen terminal interface and put stdin in
-     raw mode (`command-code login` uses Ink). Spawned with pipes they die on
-     "Raw mode is not supported" before reaching the browser, so the tray must
-     hand them a real terminal (`needsTerminal` in `SIGN_IN_CLIS`) and then
-     wait for the credential to be rewritten. Check this by running the login
-     with `</dev/null` before wiring a button to it.
-   - Connecting is always one click. Any tray sign-in button installs the
-     official CLI when it is missing and then runs the login in the same
-     operation (`connectProvider` in the tray), rather than stopping after the
-     install and waiting for a second click. Label the button for everything
-     it will do (`Install & Sign In`) so the single click stays honest. This
-     is the house rule for every provider, OAuth or CLI-session: implement it
-     without asking.
-   - A provider whose official CLI finishes a browser sign-in by minting an
-     API key into its own home directory (Command Code) is not an `oauth`
-     provider: it stays `openai-compatible` and declares
-     `credential.cliSession` in the registry so the resolver reads that file
-     after the environment, the stored key, and the Keychain. Add its CLI to
-     `SIGN_IN_CLIS` in `src/provider-onboarding.mjs` so the tray's install and
-     sign-in buttons work, and keep the key field available alongside.
-     Do not split such a provider into separate OAuth and API ids. The
-     sign-in mints the very key the API route would use, against the same
-     endpoint and the same catalog, so the two are one credential with two
-     delivery mechanisms rather than two products. Split a provider only when
-     the routes differ in endpoint, models, or billing — as Kimi's
-     subscription forwarder and Moonshot's platform API do.
-   - Add the provider icon under
-     `apps/macos/ModelRouterTray/Resources/` and record its source in
-     `PROVIDER-ICON-SOURCES.md`.
+2. **Credential and login flow.** API-key providers must accept credentials
+   through the managed CLI path without exposing a key in chat, logs, or command
+   arguments. OAuth providers need an `OAUTH_CLIS` entry in
+   `src/provider-onboarding.mjs`, status, session refresh, and reconnect-on-
+   expiry wiring. When an official login needs a real terminal, document and
+   test that terminal invocation. A provider whose official CLI mints an API
+   key stays `openai-compatible` and declares `credential.cliSession`; do not
+   split it into separate OAuth and API providers unless endpoint, models, or
+   billing differ.
 3. **Plan entitlement.** When a provider's credential can authenticate an
    account whose plan still may not call the API, set `planNote` on its
-   registry entry. `providers enable`, `doctor`, and the tray all print it, so
+   registry entry. `providers enable` and `doctor` print it, so
    the requirement is visible where someone connects instead of arriving as a
    403 inside Codex. Command Code is the case: any plan signs in, only the
    Provider plan is served.
-4. **Usage, limits, and balance in the tray.** Wire the provider's account
+4. **Usage, limits, and balance.** Wire the provider's account
    endpoint into `src/provider-account-usage.mjs` so `provider-usage --json`
    returns real metrics: `quota` metrics (used/limit/remaining with reset
    time) for plan- or window-limited providers, and `balance` metrics (the
-   remaining dollar or credit amount) for prepaid/pay-per-use providers. These
-   feed the tray's "% left" display, usage cards, and low-remaining reminders,
-   so a provider without them silently hides the user's spend. If the provider
-   exposes no usage or balance API, the snapshot must degrade gracefully and
-   the tray must say usage is unavailable rather than showing stale or empty
-   numbers. Routed request/token accounting comes from the shared usage-events
-   pipeline and needs no per-provider work beyond correct event recording.
+   remaining dollar or credit amount) for prepaid/pay-per-use providers. If the
+   provider exposes no usage or balance API, the snapshot must degrade
+   gracefully and clearly report that usage is unavailable. Routed request/token
+   accounting comes from the shared usage-events pipeline and needs no
+   per-provider work beyond correct event recording.
 
 ## Vision bridge for text-only models
 
@@ -414,8 +379,8 @@ the turn as text. Treat it as a router capability, never as a model capability.
    (`setup` requires `--yes` before any download). A model download runs
    detached (`src/vision-download.mjs` streams Ollama's `/api/pull` and records
    progress in `vision-download.json`): `pull` returns at once and `pull-status`
-   reports the percentage, because a synchronous multi-gigabyte pull freezes
-   the tray and reads as a crash. The worker pins the model only after it is on
+   reports the percentage, because a synchronous multi-gigabyte pull blocks the
+   caller. The worker pins the model only after it is on
    disk, so a failed or interrupted download never repoints the bridge at a
    model that is not there.
 5. The second sanctioned exception is a **native engine**: a vision model from
@@ -459,8 +424,8 @@ the turn as text. Treat it as a router capability, never as a model capability.
    never-quieted line, so the operator can tell a vision call happened and
    against what. What is still missing is the other half of what "Ship a new
    provider to every installer" requires of everyone else: the ChatGPT plan's
-   remaining quota does not move in the tray when a screenshot is transcribed,
-   and no surface renders routed usage events at all. It is being closed
+   remaining quota is not available when a screenshot is transcribed, and no
+   surface renders routed usage events at all. It is being closed
    separately. Do not read it as settled, do not weaken this section to
    accommodate it, and do not extend the exception to another engine while it is
    still open.
@@ -586,8 +551,8 @@ the turn as text. Treat it as a router capability, never as a model capability.
    unearned "accurate" puts a confident-wrong reader at the top of the list.
 15. Which native models may read an image is one rule in one place
    (`src/vision-engines.mjs`), not a criterion each surface re-derives. The
-   catalog build, the tray, and the request path each asked it separately once,
-   and the three answers disagreed — the request path applied no auth gate at
+   catalog build and request path each asked it separately once, and the two
+   answers disagreed — the request path applied no auth gate at
    all. The rule is shared; only the evidence for the gate differs, because just
    one caller can afford to ask Codex directly (`codexAuthStatus()` spawns a
    process) and only the request path holds the caller's live session. Every
@@ -658,15 +623,12 @@ minutes later. Do not quietly drop the label because a check happened to pass.
   table and, when the user has no concurrency preference, its marked
   `[agents].max_concurrent_threads_per_session` default. It may change the root
   `model_provider` only when the user explicitly
-  enables the tray's login-free mode. In that mode it may also select an
+  enables login-free mode. In that mode it may also select an
   enabled external `model`; snapshot both previous values in protected router
   state and restore them exactly when the mode is disabled.
 - Preserve reasoning settings, profiles, projects, trust, MCP configuration,
   features, and ChatGPT authentication. Preserve `model` and `model_provider`
   outside the explicitly enabled login-free mode.
-- A user-initiated macOS tray login-mode change may gracefully restart only the
-  registered Codex desktop app. This does not authorize an installation task to
-  quit Codex, and the tray must never force-terminate it.
 - Do not kill unknown processes on ports 4100-4103, or on the Grok OAuth
   forwarder port 4108.
 - Do not print or read credential-file contents. Status commands report presence

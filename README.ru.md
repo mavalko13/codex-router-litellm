@@ -242,8 +242,6 @@ npm run verify:local
 
 Команда выполняет чистую установку dependencies, syntax checks, полный Node
 test suite, production dependency audit и проверки entrypoints текущей ОС.
-После изменения Desktop используйте `npm run verify:local:full`: дополнительно
-проверяется Rust/Tauri app и собирается native binary; нужны `cargo` и `rustc`.
 `npm run verify:local:fast` подходит для повторного запуска с уже актуальными
 dependencies, а `npm run verify:local:plan` только печатает полный план.
 Provider API и платные модели эти команды не вызывают.

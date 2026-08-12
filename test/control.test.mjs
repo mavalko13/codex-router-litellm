@@ -81,7 +81,7 @@ test("codex probe reports enabled models", () => {
 test("codex probe folds protocol variants into one provider family", () => {
   const slice = probe("codex", ["opencode-go"]);
   // Models served by the messages/responses variants group under the family
-  // id, so the tray renders a single opencode Go row.
+  // id, so clients render a single opencode Go row.
   const family = slice.models.filter((m) => m.provider === "opencode-go");
   assert.ok(family.length > 0 && family.every((m) => m.enabled));
   assert.ok(!slice.models.some((m) => m.provider.startsWith("opencode-go-")));

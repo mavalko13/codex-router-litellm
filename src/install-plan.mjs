@@ -8,11 +8,9 @@
 // no state directory has to stay in sync with the checkout.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { trayBundleDir } from "./tray-install.mjs";
 
 export const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -123,74 +121,6 @@ function venvPythonVersion(root) {
   return match ? match[1] : "unknown";
 }
 
-// The companion is one bundle per user, not one per checkout: a `dist/` target
-// inside the repository produces a separate tray for every clone and leaves
-// launchd pointing at whichever one installed last.
-function sourceFilesIn(dir, extensions) {
-  try {
-    return readdirSync(dir)
-      .sort()
-      .filter((entry) => extensions.some((extension) => entry.endsWith(extension)))
-      .map((entry) => path.join(dir, entry));
-  } catch {
-    // A checkout without that companion still answers "no sources".
-    return [];
-  }
-}
-
-// trayDecision offers the companion on macOS *and* Linux, so both need a
-// staleness answer here. Covering only macOS would leave Linux users with the
-// exact drift this gating exists to stop: a companion built once and never
-// rebuilt, running against router code it no longer matches.
-const TRAY_PLATFORMS = {
-  darwin: {
-    sources: (root) => {
-      const base = path.join(root, "apps", "macos", "ModelRouterTray");
-      return [
-        path.join(base, "Package.swift"),
-        path.join(base, "Resources", "Info.plist"),
-        ...sourceFilesIn(path.join(base, "Sources"), [".swift"]),
-      ];
-    },
-    artifact: (root, home) =>
-      path.join(trayBundleDir("darwin", home), "Contents", "MacOS", "ModelRouterTray"),
-    stamp: (root, home) => path.join(trayBundleDir("darwin", home), "Contents", STAMP_NAME),
-    // Companions built before the per-user move live inside the checkout.
-    legacy: (root) =>
-      path.join(root, "dist", "Model Router.app", "Contents", "MacOS", "ModelRouterTray"),
-  },
-  linux: {
-    sources: (root) => {
-      const base = path.join(root, "apps", "desktop");
-      return [
-        path.join(base, "package.json"),
-        path.join(base, "src-tauri", "Cargo.toml"),
-        path.join(base, "src-tauri", "tauri.conf.json"),
-        path.join(base, "src-tauri", "build.rs"),
-        ...sourceFilesIn(path.join(base, "src-tauri", "src"), [".rs"]),
-        ...sourceFilesIn(path.join(base, "ui"), [".html", ".css", ".js", ".mjs"]),
-      ];
-    },
-    // Tauri builds in place; the binary is the installed artifact and the
-    // stamp sits beside it, so deleting the build tree invalidates both.
-    artifact: (root) =>
-      path.join(root, "apps", "desktop", "src-tauri", "target", "release", "codex-router-desktop"),
-    stamp: (root) =>
-      path.join(root, "apps", "desktop", "src-tauri", "target", "release", STAMP_NAME),
-  },
-};
-
-export function traySourceFingerprint(root = SOURCE_ROOT, platform = process.platform) {
-  const definition = TRAY_PLATFORMS[platform];
-  if (!definition) return "";
-  return sha256(
-    definition
-      .sources(root)
-      .map((file) => `${path.relative(root, file)}\0${readFile(file) ?? ""}`)
-      .join("\0"),
-  );
-}
-
 export const STEPS = {
   "node-deps": {
     stamp: (root) => path.join(root, "node_modules", STAMP_NAME),
@@ -229,53 +159,6 @@ export const STEPS = {
     skipMessage: "LiteLLM already matches the pinned versions; skipping the Python install.",
   },
 };
-
-// Deliberately not a STEPS entry: those treat "artifact missing" as "run", and
-// a missing tray means the user never asked for one. An update keeps whatever
-// companion the user chose in sync; it never installs a new one.
-//   unsupported - not macOS
-//   absent      - no companion installed, leave it that way
-//   skip        - installed and already matches its sources
-//   rebuild     - installed but built from different sources
-export function trayRebuildPlan({
-  root = SOURCE_ROOT,
-  platform = process.platform,
-  home = os.homedir(),
-} = {}) {
-  const definition = TRAY_PLATFORMS[platform];
-  if (!definition) return "unsupported";
-  if (!existsSync(definition.artifact(root, home))) {
-    // A companion at a superseded location still counts as installed, so the
-    // update migrates it rather than reading as "absent" and abandoning it.
-    const legacy = definition.legacy?.(root);
-    return legacy && existsSync(legacy) ? "rebuild" : "absent";
-  }
-  const stamp = readFile(definition.stamp(root, home));
-  if (!stamp) return "rebuild";
-  try {
-    return JSON.parse(stamp)?.fingerprint === traySourceFingerprint(root, platform)
-      ? "skip"
-      : "rebuild";
-  } catch {
-    return "rebuild";
-  }
-}
-
-export function recordTrayBuild({
-  root = SOURCE_ROOT,
-  platform = process.platform,
-  home = os.homedir(),
-} = {}) {
-  const definition = TRAY_PLATFORMS[platform];
-  if (!definition) throw new Error(`The desktop companion is not built on ${platform}.`);
-  const target = definition.stamp(root, home);
-  writeFileSync(
-    target,
-    `${JSON.stringify({ version: 1, step: "tray", fingerprint: traySourceFingerprint(root, platform) }, null, 2)}\n`,
-    { encoding: "utf8" },
-  );
-  return target;
-}
 
 export function stepStatus(step, { root = SOURCE_ROOT, platform = process.platform } = {}) {
   const definition = STEPS[step];
@@ -477,22 +360,6 @@ function main(argv) {
     recordStep(step);
     return 0;
   }
-  if (command === "tray-plan") {
-    // Fail closed, unlike `status`: an unexpected error must leave the
-    // companion alone rather than trigger a Swift build during an update.
-    let plan = "absent";
-    try {
-      plan = trayRebuildPlan();
-    } catch {
-      plan = "absent";
-    }
-    process.stdout.write(`${plan}\n`);
-    return 0;
-  }
-  if (command === "record-tray") {
-    recordTrayBuild();
-    return 0;
-  }
   if (command === "requirements") {
     process.stdout.write(`${PYTHON_REQUIREMENTS.join("\n")}\n`);
     return 0;
@@ -504,8 +371,8 @@ function main(argv) {
     return 0;
   }
   console.error(
-    "Usage: install-plan.mjs status|record <node-deps|python-deps> | tray-plan | record-tray | " +
-    "requirements | python-install-command <uv|pip> [posix|windows]",
+    "Usage: install-plan.mjs status|record <node-deps|python-deps> | requirements | " +
+    "python-install-command <uv|pip> [posix|windows]",
   );
   return 2;
 }

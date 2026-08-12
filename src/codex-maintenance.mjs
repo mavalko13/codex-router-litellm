@@ -21,9 +21,8 @@ function parseDoctorReport(output) {
   }
 }
 
-// The tray can be built from a different checkout than the one that owns the
-// installed router (for example a login item left behind by an old bundle on a
-// removable volume). Maintenance must update the recorded owner, otherwise
+// The command can run from a checkout other than the one that owns the
+// installed router. Maintenance must update the recorded owner, otherwise
 // Update & Verify refreshes the wrong checkout and the stable install stays on
 // its old revision.
 export function maintenanceSourceRoot(repoRoot, manifest = readInstallManifest()) {

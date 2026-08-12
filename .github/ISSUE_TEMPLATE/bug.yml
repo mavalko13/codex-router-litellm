@@ -18,7 +18,7 @@ body:
     id: target
     attributes:
       label: App target
-      options: [Codex, Claude Desktop experimental]
+      options: [Codex]
     validations:
       required: true
   - type: dropdown

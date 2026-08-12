@@ -17,7 +17,6 @@ import {
   subagentEligibleModels,
 } from "./multi-agent-state.mjs";
 import { readHiddenModels } from "./model-picker-state.mjs";
-import { serviceFollowsHostApps } from "./presence-state.mjs";
 import { waitForRouterHealth } from "./router-health.mjs";
 import {
   CALLER_SECRET_PATH,
@@ -594,7 +593,7 @@ try {
       : config.provider_mode_state_present
         ? "stale provider-mode restore state"
         : "OpenAI login available",
-    "Use the tray toggle to switch modes, or run ./bin/doctor --fix.",
+    "Run ./bin/doctor --fix.",
   );
 } catch (error) {
   add(
@@ -619,24 +618,14 @@ add(
     : "Disable the other router manually; Codex Router will not overwrite it.",
 );
 
-// When the tray follows the desktop apps it stops the service as soon as Codex
-// and ChatGPT are both closed. That is the resting state, not a fault, so it
-// must not read as a failure: a `fail` here sets the exit code and sends the
-// tray's Fix button down the full repair path for a router that is off on
-// purpose.
-const followsHostApps = serviceFollowsHostApps();
 let serviceLoaded = false;
-let serviceStoppedByDesign = false;
 try {
   const service = childJson("service.mjs", ["status"]);
   serviceLoaded = Boolean(service.loaded);
-  serviceStoppedByDesign = !serviceLoaded && followsHostApps;
   add(
-    serviceLoaded ? "ok" : serviceStoppedByDesign ? "warn" : "fail",
+    serviceLoaded ? "ok" : "fail",
     "Background service",
-    serviceStoppedByDesign
-      ? "stopped; following Codex (open Codex or ChatGPT to start it)"
-      : service.state || "stopped",
+    service.state || "stopped",
     "Run ./bin/enable or ./bin/doctor --fix.",
   );
 } catch (error) {

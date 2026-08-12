@@ -1,6 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -115,55 +114,6 @@ function installCurrentCheckout() {
   }
 }
 
-function registeredTrayBundlePath() {
-  try {
-    const value = execFileSync(
-      "defaults",
-      [
-        "read",
-        "io.github.codex-router.tray",
-        "ModelRouterTray.loginItemBundlePath",
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
-    return value || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function trayRefreshRequired({
-  platform = process.platform,
-  home = os.homedir(),
-  sourceRoot = SOURCE_ROOT,
-  registeredPath,
-} = {}) {
-  if (platform !== "darwin") return false;
-  const registered = registeredPath ?? registeredTrayBundlePath();
-  const candidates = [
-    path.join(sourceRoot, "dist", "Model Router.app"),
-    path.join(home, "Applications", "Model Router.app"),
-  ];
-  return (
-    candidates.some((candidate) => existsSync(candidate)) ||
-    Boolean(registered && existsSync(registered))
-  );
-}
-
-// The tray is rebuilt from the same checkout that owns the router, so an
-// update never leaves a stale companion binary behind. Best-effort: the router
-// update itself succeeded, and a failed tray refresh must not roll it back.
-function refreshTrayCompanion() {
-  if (!trayRefreshRequired()) return;
-  const launcher = path.join(SOURCE_ROOT, "bin", "model-router-tray");
-  const result = spawnSync(launcher, [], { cwd: SOURCE_ROOT, stdio: "inherit" });
-  if (result.error) {
-    process.stderr.write(`Menu-bar companion refresh did not finish: ${result.error.message}\n`);
-  } else if (result.status !== 0) {
-    process.stderr.write(`Menu-bar companion refresh exited with status ${result.status}.\n`);
-  }
-}
-
 function revisionExists(revision) {
   try {
     git(["cat-file", "-e", `${revision}^{commit}`]);
@@ -197,7 +147,6 @@ export function updateCheckout({ force = false } = {}) {
       return { ...status, updated: false, reinstalled: false };
     }
     installCurrentCheckout();
-    refreshTrayCompanion();
     return { ...status, updated: false, reinstalled: true };
   }
   requireReplaceableCheckout(force);
@@ -213,7 +162,6 @@ export function updateCheckout({ force = false } = {}) {
   git(["merge", "--ff-only", status.available], { inherit: true });
   try {
     installCurrentCheckout();
-    refreshTrayCompanion();
   } catch (error) {
     try {
       restoreRevision(status.current);
@@ -270,7 +218,7 @@ const COMMANDS = {
   rollback: rollbackCheckout,
 };
 
-// `check` must stay read-only: the tray and the CLI both use it to answer "is
+// `check` must stay read-only: clients and the CLI both use it to answer "is
 // an update available?" without touching the installation.
 export function resolveCommand(args) {
   return COMMANDS[args.find((argument) => !argument.startsWith("--")) || "update"];

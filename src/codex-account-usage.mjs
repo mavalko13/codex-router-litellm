@@ -131,8 +131,8 @@ export function readCodexAccountUsage({ timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
       method: "initialize",
       params: {
         clientInfo: {
-          name: "codex_router_tray",
-          title: "Model Router Tray",
+          name: "codex_router",
+          title: "Codex Router",
           version: "0.4.0",
         },
         capabilities: { experimentalApi: true },
