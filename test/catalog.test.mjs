@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -75,10 +76,54 @@ test("routed models are native v2 spawn-agent model overrides", () => {
   assert.equal(model.multi_agent_version, "v2");
 });
 
-test("routed models do not inherit the native truncation policy", () => {
+test("routed models preserve the native truncation policy required by Codex", () => {
   const model = routedModel(template, grok);
-  assert.equal("truncation_policy" in model, false);
+  assert.equal("truncation_policy" in model, true);
+  assert.deepEqual(model.truncation_policy, { type: "auto" });
   assert.deepEqual(template.truncation_policy, { type: "auto" });
+});
+
+test("installed Codex parses a routed catalog with the native truncation policy", (t) => {
+  const codex = process.env.CODEX_BIN || "codex";
+  const bundled = spawnSync(codex, ["debug", "models", "--bundled"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (bundled.error && bundled.error.code === "ENOENT") {
+    t.skip("Codex CLI is not installed in this test environment");
+    return;
+  }
+  assert.equal(bundled.status, 0, bundled.stderr || bundled.stdout);
+  const native = JSON.parse(bundled.stdout);
+  const nativeTemplate = native.models.find((model) => model.visibility === "list") || native.models[0];
+  assert.ok(nativeTemplate, "bundled Codex catalog needs a model template");
+  assert.ok(nativeTemplate.truncation_policy, "bundled Codex template needs truncation_policy");
+
+  const codexHome = mkdtempSync(path.join(os.tmpdir(), "codex-router-catalog-parse-"));
+  const catalogPath = path.join(codexHome, "merged-models.json");
+  writeFileSync(
+    catalogPath,
+    `${JSON.stringify({ models: [routedModel(nativeTemplate, grok)] })}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    path.join(codexHome, "config.toml"),
+    `model_catalog_json = ${JSON.stringify(catalogPath)}\n`,
+    { mode: 0o600 },
+  );
+  try {
+    const parsed = spawnSync(codex, ["debug", "models"], {
+      encoding: "utf8",
+      timeout: 30_000,
+      env: { ...process.env, CODEX_HOME: codexHome },
+    });
+    assert.equal(parsed.status, 0, parsed.stderr || parsed.stdout);
+    const catalog = JSON.parse(parsed.stdout);
+    const routed = catalog.models.find((model) => model.slug === grok.slug);
+    assert.deepEqual(routed?.truncation_policy, nativeTemplate.truncation_policy);
+  } finally {
+    rmSync(codexHome, { recursive: true, force: true });
+  }
 });
 
 test("routed models advertise reasoning summaries only when the registry opts in", () => {
@@ -247,6 +292,14 @@ test("merged catalog preserves native GPT identity while rewriting routed models
   assert.equal(bySlug.get("gpt-5.5").supports_reasoning_summaries, false);
   assert.match(bySlug.get("grok-oauth/grok-4.5").base_instructions, /based on Grok 4\.5/);
   assert.doesNotMatch(bySlug.get("grok-oauth/grok-4.5").base_instructions, /GPT-5/);
+});
+
+test("every routed entry in a merged catalog retains the native truncation policy", () => {
+  const other = { ...grok, slug: "example/other", displayName: "Other" };
+  const merged = buildMergedCatalog({ models: [template] }, [grok, other]);
+  for (const model of merged.filter(({ slug }) => slug.includes("/"))) {
+    assert.deepEqual(model.truncation_policy, template.truncation_policy);
+  }
 });
 
 test("merged catalog preserves an explicit native reasoning summary capability", () => {

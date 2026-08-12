@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.4 - 2026-08-12
+
+- **Routed picker entries remain valid for current Codex builds.** Catalog
+  generation now preserves the native `truncation_policy` on every routed
+  entry. Codex validates that field while loading `merged-models.json`; its
+  absence in 0.4.3 rejected the catalog before Router could route a request.
+
 ## 0.4.3 - 2026-08-12
 
 - **Release verification is portable again.** `doctor --json` no longer

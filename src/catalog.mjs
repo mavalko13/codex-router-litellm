@@ -332,8 +332,9 @@ export function routedModel(template, model) {
     // opt in after their tool and encrypted-payload relay paths are verified.
     multi_agent_version: model.multiAgentVersion || "v1",
   };
-  // This is a native OpenAI request policy, not routed-model metadata.
-  delete next.truncation_policy;
+  // This is part of Codex's catalog schema, not routing behavior. Preserve
+  // the current native template verbatim: newer clients reject any model
+  // entry without it before a routed request can reach Router.
   // ClinePass strips these unsupported request controls, so Codex must not offer them.
   if (model.requestProfile === "clinepass") {
     delete next.default_reasoning_level;
