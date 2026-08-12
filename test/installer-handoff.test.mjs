@@ -183,7 +183,9 @@ function assertInitialState(fixture, oldOwner) {
     assert.equal(readFileSync(fixture.paths[name], "utf8"), contents, name);
   }
   assert.equal(readFileSync(fixture.paths.manifest, "utf8"), manifest(oldOwner));
-  assert.equal(statSync(fixture.paths.retiredLedger).mode & 0o777, 0o640);
+  if (process.platform !== "win32") {
+    assert.equal(statSync(fixture.paths.retiredLedger).mode & 0o777, 0o640);
+  }
   assert.equal(
     existsSync(fixture.paths.agent.replace("old-provider-old", "new-provider-new")),
     false,
